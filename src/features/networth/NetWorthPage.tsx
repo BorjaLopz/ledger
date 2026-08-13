@@ -44,7 +44,7 @@ export function NetWorthPage() {
 	}
 
 	return (
-		<div className="h-full overflow-y-auto p-8">
+		<div className="h-full overflow-y-auto overflow-x-hidden p-4 sm:p-8">
 			<h1 className="mb-6 text-xl font-medium">Patrimonio</h1>
 
 			{isLoading ? (

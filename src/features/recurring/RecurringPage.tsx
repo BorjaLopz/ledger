@@ -32,7 +32,7 @@ export function RecurringPage() {
 	}
 
 	return (
-		<div className="h-full overflow-y-auto p-8">
+		<div className="h-full overflow-y-auto overflow-x-hidden p-4 sm:p-8">
 			<h1 className="mb-6 text-xl font-medium">Recurrentes</h1>
 
 			<div className="grid gap-8 md:grid-cols-[1fr_320px]">
@@ -47,20 +47,22 @@ export function RecurringPage() {
 							return (
 								<div
 									key={entry.id}
-									className={`flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 ${
+									className={`flex flex-wrap items-center gap-2 rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 ${
 										entry.active ? "" : "opacity-50"
 									}`}
 								>
-									<div className="flex items-center gap-3">
-										{category && <CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4" />}
-										<div>
-											<p className="text-sm">{entry.note || category?.name || "Sin nombre"}</p>
-											<p className="text-xs text-neutral-500">
+									<div className="flex min-w-0 flex-1 items-center gap-3">
+										{category && (
+											<CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4 shrink-0" />
+										)}
+										<div className="min-w-0">
+											<p className="truncate text-sm">{entry.note || category?.name || "Sin nombre"}</p>
+											<p className="truncate text-xs text-neutral-500">
 												{FREQUENCY_LABELS[entry.frequency]} · próxima: {entry.nextDate}
 											</p>
 										</div>
 									</div>
-									<div className="flex items-center gap-3">
+									<div className="ml-auto flex shrink-0 items-center gap-3">
 										<span
 											className={`text-sm font-medium ${entry.type === "income" ? "text-green-400" : "text-red-400"}`}
 										>

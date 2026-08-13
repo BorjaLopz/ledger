@@ -36,7 +36,7 @@ export function AnalyticsPage() {
 	const showsMonthNav = period === "month" || (period === "calendar" && calendarView === "month");
 
 	return (
-		<div className="h-full overflow-y-auto p-8">
+		<div className="h-full overflow-y-auto overflow-x-hidden p-4 sm:p-8">
 			<div className="mb-6 flex flex-wrap items-center justify-between gap-4">
 				<h1 className="text-xl font-medium">Dashboard</h1>
 				<SegmentedControl

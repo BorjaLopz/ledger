@@ -12,7 +12,7 @@ export function ResumenPage() {
 	const { year, month, totals, categoryBreakdown, monthTransactions, categoriesById, isLoading } = useMonthlyDashboard();
 
 	return (
-		<div className="h-full overflow-y-auto p-8">
+		<div className="h-full overflow-y-auto overflow-x-hidden p-4 sm:p-8">
 			<div className="mb-6 flex items-center justify-between">
 				<h1 className="text-xl font-medium">Hola, {user?.displayName ?? user?.email}</h1>
 				<span className="text-sm capitalize tabular-nums text-neutral-400">{monthLabel(year, month)}</span>
@@ -52,12 +52,14 @@ export function ResumenPage() {
 												key={transaction.id}
 												className="flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2"
 											>
-												<div className="flex items-center gap-3">
-													{category && <CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4" />}
-													<span className="text-sm">{category?.name ?? "Sin categoría"}</span>
+												<div className="flex min-w-0 flex-1 items-center gap-3">
+													{category && (
+														<CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4 shrink-0" />
+													)}
+													<span className="truncate text-sm">{category?.name ?? "Sin categoría"}</span>
 												</div>
 												<span
-													className={`text-sm font-medium ${transaction.type === "income" ? "text-green-400" : "text-red-400"}`}
+													className={`shrink-0 text-sm font-medium ${transaction.type === "income" ? "text-green-400" : "text-red-400"}`}
 												>
 													{transaction.type === "income" ? "+" : "-"}
 													{currency.format(transaction.amount)}

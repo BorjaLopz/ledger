@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { useNavigate } from "react-router-dom";
 import { z } from "zod";
+import { LedgerLogo } from "../../components/LedgerLogo";
 import { auth, googleProvider } from "../../lib/firebase";
 
 const loginSchema = z.object({
@@ -45,7 +46,10 @@ export function LoginPage() {
 	return (
 		<div className="flex min-h-screen items-center justify-center bg-neutral-950 px-4 text-neutral-100">
 			<div className="w-full max-w-sm space-y-6">
-				<h1 className="text-center text-2xl font-medium">ledger</h1>
+				<div className="flex flex-col items-center gap-3">
+					<LedgerLogo className="h-9 w-9" />
+					<h1 className="text-2xl font-medium">ledger</h1>
+				</div>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
 					<div>

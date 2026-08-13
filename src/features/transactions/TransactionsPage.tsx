@@ -83,7 +83,7 @@ export function TransactionsPage() {
 	}
 
 	return (
-		<div className="flex h-full flex-col p-8">
+		<div className="flex h-full flex-col overflow-y-auto overflow-x-hidden p-4 sm:p-8 md:overflow-hidden">
 			<div className="mb-4 flex shrink-0 items-center justify-between">
 				<h1 className="text-xl font-medium">Transacciones</h1>
 				{selectedIds.size > 0 && (
@@ -109,10 +109,10 @@ export function TransactionsPage() {
 				)}
 			</div>
 
-			<div className="grid min-h-0 flex-1 gap-8 md:grid-cols-[1fr_320px]">
-				<div className="flex min-h-0 flex-col">
+			<div className="grid gap-8 md:min-h-0 md:flex-1 md:grid-cols-[1fr_320px]">
+				<div className="flex min-w-0 flex-col md:min-h-0">
 					<div className="relative mb-4 flex shrink-0 flex-wrap items-end gap-3 rounded-md border border-neutral-800 bg-neutral-900 p-3 pt-6">
-						<div className="min-w-[160px] flex-1">
+						<div className="w-full sm:min-w-[160px] sm:w-auto sm:flex-1">
 							<label htmlFor="filter-search" className="mb-1 block text-xs text-neutral-500">
 								Buscar
 							</label>
@@ -125,7 +125,7 @@ export function TransactionsPage() {
 								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600"
 							/>
 						</div>
-						<div>
+						<div className="w-full sm:w-auto">
 							<label htmlFor="filter-type" className="mb-1 block text-xs text-neutral-500">
 								Tipo
 							</label>
@@ -133,14 +133,14 @@ export function TransactionsPage() {
 								id="filter-type"
 								value={typeFilter}
 								onChange={(event) => setTypeFilter(event.target.value as TypeFilter)}
-								className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600"
+								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
 							>
 								<option value="all">Todos</option>
 								<option value="expense">Gasto</option>
 								<option value="income">Ingreso</option>
 							</select>
 						</div>
-						<div>
+						<div className="w-full sm:w-auto">
 							<label htmlFor="filter-category" className="mb-1 block text-xs text-neutral-500">
 								Categoría
 							</label>
@@ -148,7 +148,7 @@ export function TransactionsPage() {
 								id="filter-category"
 								value={categoryFilter}
 								onChange={(event) => setCategoryFilter(event.target.value)}
-								className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600"
+								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
 							>
 								<option value="all">Todas</option>
 								{categories?.map((category) => (
@@ -158,7 +158,7 @@ export function TransactionsPage() {
 								))}
 							</select>
 						</div>
-						<div>
+						<div className="w-full sm:w-auto">
 							<label htmlFor="filter-from" className="mb-1 block text-xs text-neutral-500">
 								Desde
 							</label>
@@ -167,10 +167,10 @@ export function TransactionsPage() {
 								type="date"
 								value={dateFrom}
 								onChange={(event) => setDateFrom(event.target.value)}
-								className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600"
+								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
 							/>
 						</div>
-						<div>
+						<div className="w-full sm:w-auto">
 							<label htmlFor="filter-to" className="mb-1 block text-xs text-neutral-500">
 								Hasta
 							</label>
@@ -179,7 +179,7 @@ export function TransactionsPage() {
 								type="date"
 								value={dateTo}
 								onChange={(event) => setDateTo(event.target.value)}
-								className="rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600"
+								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
 							/>
 						</div>
 						{hasActiveFilters && (
@@ -193,7 +193,7 @@ export function TransactionsPage() {
 						)}
 					</div>
 
-					<div className="min-h-0 flex-1 overflow-y-auto pr-2">
+					<div className="pr-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overflow-x-hidden">
 						{isLoading ? (
 							<p className="text-sm text-neutral-600">Cargando...</p>
 						) : filteredTransactions.length === 0 ? (
@@ -228,7 +228,7 @@ export function TransactionsPage() {
 											}}
 											className="flex cursor-pointer items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 hover:border-neutral-700"
 										>
-											<div className="flex items-center gap-3">
+											<div className="flex min-w-0 flex-1 items-center gap-3">
 												<input
 													type="checkbox"
 													checked={selectedIds.has(transaction.id)}
@@ -236,16 +236,18 @@ export function TransactionsPage() {
 													onClick={(event) => event.stopPropagation()}
 													className="h-4 w-4 shrink-0 accent-neutral-100"
 												/>
-												{category && <CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4" />}
-												<div>
-													<p className="text-sm">{category?.name ?? "Sin categoría"}</p>
-													<p className="text-xs text-neutral-500">
+												{category && (
+													<CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4 shrink-0" />
+												)}
+												<div className="min-w-0">
+													<p className="truncate text-sm">{category?.name ?? "Sin categoría"}</p>
+													<p className="truncate text-xs text-neutral-500">
 														{transaction.date}
 														{transaction.note ? ` · ${transaction.note}` : ""}
 													</p>
 												</div>
 											</div>
-											<div className="flex items-center gap-3">
+											<div className="flex shrink-0 items-center gap-3">
 												<span
 													className={`text-sm font-medium ${transaction.type === "income" ? "text-green-400" : "text-red-400"}`}
 												>
@@ -284,7 +286,7 @@ export function TransactionsPage() {
 					</div>
 				</div>
 
-				<div className="overflow-y-auto pr-1">
+				<div className="min-w-0 pr-1 md:overflow-y-auto md:overflow-x-hidden">
 					<TransactionForm />
 				</div>
 			</div>

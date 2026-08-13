@@ -15,7 +15,7 @@ export function CategoriesPage() {
 	const incomes = categories?.filter((category) => category.type === "income") ?? [];
 
 	return (
-		<div className="h-full overflow-y-auto p-8">
+		<div className="h-full overflow-y-auto overflow-x-hidden p-4 sm:p-8">
 			<h1 className="mb-6 text-xl font-medium">Categorías</h1>
 
 			{isLoading ? (
@@ -62,11 +62,11 @@ function CategoryGroup({ title, categories, onDelete, onEdit }: CategoryGroupPro
 						key={category.id}
 						className="flex items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2"
 					>
-						<div className="flex items-center gap-2">
-							<CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4" />
-							<span className="text-sm">{category.name}</span>
+						<div className="flex min-w-0 flex-1 items-center gap-2">
+							<CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4 shrink-0" />
+							<span className="truncate text-sm">{category.name}</span>
 						</div>
-						<div className="flex items-center gap-3">
+						<div className="flex shrink-0 items-center gap-3">
 							<button type="button" onClick={() => onEdit(category)} className="text-neutral-600 hover:text-neutral-300">
 								<Pencil className="h-4 w-4" />
 							</button>
