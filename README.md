@@ -2,10 +2,10 @@
 
 # 📒 Ledger
 
-**Control de finanzas personales — gastos, ingresos, recurrentes y patrimonio, mes a mes.**
+**Aplicación de finanzas personales — gastos, ingresos, pagos recurrentes y patrimonio.**
 
-Side project construido con React 19, TypeScript, Firebase y Tailwind CSS v4.
-Sin backend propio: Firebase (Auth + Firestore + Storage) hace de servidor.
+Frontend React 19 + TypeScript sobre una arquitectura serverless: Firebase (Auth,
+Firestore, Storage) sustituye por completo al backend.
 
 [![React](https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=black)](https://react.dev)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org)
@@ -19,10 +19,7 @@ Sin backend propio: Firebase (Auth + Firestore + Storage) hace de servidor.
 
 ## Capturas
 
-<!--
-TODO: sustituir por capturas reales en docs/screenshots/.
-Sugerencia de tamaño: 1280px de ancho para desktop, 390px para móvil.
--->
+<!-- TODO: sustituir por capturas reales en docs/screenshots/ (1280px desktop, 390px móvil). -->
 
 | Resumen | Dashboard |
 |---|---|
@@ -36,69 +33,73 @@ Sugerencia de tamaño: 1280px de ancho para desktop, 390px para móvil.
 |---|
 | ![Móvil](docs/screenshots/mobile.png) |
 
-## Qué hace
+## Funcionalidades
 
-- **Resumen del mes activo** — balance, gasto por categoría, % de ahorro y aviso de recurrentes pendientes de este mes.
-- **Transacciones** — alta de gastos/ingresos con foto del ticket, filtros (texto, tipo, categoría, rango de fechas), selección múltiple y borrado masivo, modal de detalle con edición.
-- **Recurrentes** — pagos e ingresos periódicos (semanal/mensual/anual) que se generan solos como transacciones reales al abrir la app, sin meterlos a mano cada mes.
-- **Dashboard** — conmuta entre vista mensual, anual y calendario (mes/semana/año), y entre gráfico de barras o de tarta. Calendario con puntos de color por categoría y desglose al hover.
-- **Patrimonio** — snapshots periódicos de activos y deudas; cada registro nuevo hereda el anterior para que solo haga falta ajustar lo que cambió. Progresión con % de variación.
-- **Categorías** — totalmente personalizables (nombre, icono, color, tipo), con las básicas creadas por defecto.
-- **Auth** — Google o email/contraseña, datos aislados por usuario vía reglas de seguridad de Firestore/Storage.
-- **Responsive** — pensado mobile-first: nav con menú hamburguesa, formularios siempre accesibles arriba (no enterrados bajo listas largas), sin scroll horizontal.
+- **Resumen mensual** — balance, gasto por categoría, porcentaje de ahorro y aviso de recurrentes pendientes del mes en curso.
+- **Transacciones** — registro de gastos e ingresos con adjunto de foto de ticket, filtros por texto/tipo/categoría/rango de fechas, selección múltiple con borrado masivo, y modal de detalle con edición.
+- **Pagos recurrentes** — periodicidad semanal, mensual o anual; se materializan automáticamente como transacciones reales al abrir la aplicación, sin registro manual mes a mes.
+- **Dashboard** — vistas mensual, anual y calendario (mes/semana/año), con gráfico de barras o de tarta intercambiable. La vista calendario muestra marcadores por categoría con desglose al pasar el cursor.
+- **Patrimonio** — snapshots periódicos de activos y deudas; cada nuevo registro parte del anterior, reduciendo la entrada de datos a los cambios reales. Incluye variación porcentual entre periodos.
+- **Categorías** — configurables por nombre, icono, color y tipo, con un set inicial predefinido.
+- **Autenticación** — Google o email/contraseña; los datos quedan aislados por usuario mediante reglas de seguridad de Firestore y Storage.
+- **Diseño responsive** — navegación con menú móvil, formularios posicionados antes de las listas para evitar scroll excesivo, sin desbordamiento horizontal.
 
-## Stack
+## Stack técnico
 
 | Capa | Tecnología |
 |---|---|
 | UI | React 19, TypeScript, Tailwind CSS v4 |
-| Routing | React Router 7 |
+| Enrutado | React Router 7 |
 | Datos remotos | Firebase (Auth, Firestore, Storage) vía TanStack Query |
-| Estado global | Zustand (sesión, modal de confirmación) |
+| Estado global | Zustand |
 | Formularios | React Hook Form + Zod |
-| Gráficas | Recharts |
+| Visualización de datos | Recharts |
 | Animación | Framer Motion |
-| Iconos | Lucide |
+| Iconografía | Lucide |
 | Build | Vite |
 
-No hay servidor propio: toda la lógica corre en el cliente y Firebase Firestore/Storage,
-con reglas de seguridad que limitan cada documento al `uid` del usuario autenticado.
+La aplicación no requiere backend propio: toda la lógica de negocio corre en el
+cliente, con Firestore y Storage como única capa de persistencia. Las reglas de
+seguridad restringen cada documento al `uid` del usuario autenticado.
 
-## Arranque en local
+## Puesta en marcha
 
 ```bash
 npm install
-cp .env.example .env   # rellena con la config de tu proyecto Firebase
+cp .env.example .env
 npm run dev
 ```
 
-Necesitas un proyecto de Firebase con **Authentication** (Email/Password y/o Google),
-**Firestore** y **Storage** activados. Las reglas de seguridad están en `firestore.rules`
-y `storage.rules` — publícalas desde la consola de Firebase o con `firebase deploy`.
+`.env` debe completarse con la configuración de un proyecto de Firebase que tenga
+**Authentication** (Email/Password y/o Google), **Firestore** y **Storage**
+habilitados. Las reglas de seguridad se encuentran en `firestore.rules` y
+`storage.rules`, y deben publicarse desde la consola de Firebase o vía
+`firebase deploy`.
 
 ## Despliegue
 
-Configurado para Netlify (`netlify.toml`, incluye el redirect necesario para las rutas
-de React Router). Variables de entorno (`VITE_FIREBASE_*`) se configuran en el panel de
-Netlify, no se suben en `.env`. Recuerda añadir el dominio de producción en
-**Firebase → Authentication → Settings → Authorized domains** para que el login con
-Google funcione ahí.
+El proyecto está configurado para Netlify (`netlify.toml`, incluye el redirect
+necesario para el enrutado de React Router). Las variables de entorno
+(`VITE_FIREBASE_*`) se definen en el panel de Netlify, no en `.env`. El dominio
+de producción debe añadirse en **Firebase → Authentication → Settings →
+Authorized domains** para que el inicio de sesión con Google funcione en ese
+entorno.
 
 ## Estructura
 
 ```
 src/
-  features/        # un directorio por dominio (transactions, recurring, networth...)
-  routes/           # layout, rutas protegidas, listener de auth
-  store/            # estado global (zustand)
-  lib/              # cliente de Firebase, query client
-  types/            # modelo de datos compartido
+  features/   # un directorio por dominio (transactions, recurring, networth...)
+  routes/     # layout, rutas protegidas, listener de auth
+  store/      # estado global (zustand)
+  lib/        # cliente de Firebase, query client
+  types/      # modelo de datos compartido
 ```
 
 ---
 
 <div align="center">
 
-Hecho por [Borja López Díaz](https://github.com/BorjaLopz) · proyecto personal de aprendizaje
+Desarrollado por [Borja López Díaz](https://github.com/BorjaLopz)
 
 </div>
