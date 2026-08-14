@@ -30,7 +30,9 @@ export function AppLayout() {
 				<div className="flex items-center gap-6">
 					<div className="flex items-center gap-2">
 						<LedgerLogo />
-						<span className="text-sm font-medium">ledger</span>
+						<span className="text-sm font-bold" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
+							Ledger
+						</span>
 					</div>
 					<div className="hidden items-center gap-6 md:flex">
 						{links.map((link) => (

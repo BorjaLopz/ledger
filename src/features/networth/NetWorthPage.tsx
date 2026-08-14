@@ -76,7 +76,7 @@ export function NetWorthPage() {
 					</div>
 
 					<div className="grid gap-8 md:grid-cols-[1fr_320px]">
-						<div className="space-y-2">
+						<div className="order-2 space-y-2 md:order-1">
 							{entriesWithChange.length === 0 ? (
 								<p className="text-sm text-neutral-600">Sin registros todavía.</p>
 							) : (
@@ -134,7 +134,9 @@ export function NetWorthPage() {
 								))
 							)}
 						</div>
-						<NetWorthForm latestEntry={latest} editingEntry={editingEntry} onDone={() => setEditingEntry(null)} />
+						<div className="order-1 md:order-2">
+							<NetWorthForm latestEntry={latest} editingEntry={editingEntry} onDone={() => setEditingEntry(null)} />
+						</div>
 					</div>
 				</div>
 			)}

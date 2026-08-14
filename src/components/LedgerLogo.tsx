@@ -4,17 +4,16 @@ interface LedgerLogoProps {
 
 export function LedgerLogo({ className = "h-5 w-5" }: LedgerLogoProps) {
 	return (
-		<svg viewBox="0 0 32 32" className={className} aria-hidden="true">
-			<rect width="32" height="32" rx="7" fill="#171717" />
-			<path d="M9 7v18h18" fill="none" stroke="#f5f5f5" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+		<svg viewBox="0 0 100 100" className={className} aria-hidden="true">
 			<path
-				d="M9.5 18.5l5-6 4 3.5 6.5-8.5"
-				fill="none"
-				stroke="#3987e5"
-				strokeWidth="2.5"
-				strokeLinecap="round"
-				strokeLinejoin="round"
+				d="M28,12 L88,12 L88,72 A16,16 0 0 1 72,88 L28,88 A16,16 0 0 1 12,72 L12,28 A16,16 0 0 1 28,12 Z"
+				fill="#2b2d31"
 			/>
+			<polygon points="62,12 88,12 88,38" fill="oklch(53% 0.24 25)" />
+			<g fill="#ffffff">
+				<rect x="37" y="32" width="10" height="36" />
+				<rect x="37" y="58" width="26" height="10" />
+			</g>
 		</svg>
 	);
 }

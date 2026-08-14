@@ -36,7 +36,7 @@ export function RecurringPage() {
 			<h1 className="mb-6 text-xl font-medium">Recurrentes</h1>
 
 			<div className="grid gap-8 md:grid-cols-[1fr_320px]">
-				<div className="space-y-2">
+				<div className="order-2 space-y-2 md:order-1">
 					{isLoading ? (
 						<p className="text-sm text-neutral-600">Cargando...</p>
 					) : recurring?.length === 0 ? (
@@ -94,7 +94,9 @@ export function RecurringPage() {
 					)}
 				</div>
 
-				<RecurringForm editingEntry={editingEntry} onDone={() => setEditingEntry(null)} />
+				<div className="order-1 md:order-2">
+					<RecurringForm editingEntry={editingEntry} onDone={() => setEditingEntry(null)} />
+				</div>
 			</div>
 		</div>
 	);

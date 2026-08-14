@@ -22,7 +22,7 @@ export function CategoriesPage() {
 				<p className="text-sm text-neutral-600">Cargando...</p>
 			) : (
 				<div className="grid gap-8 md:grid-cols-2">
-					<div className="space-y-6">
+					<div className="order-2 space-y-6 md:order-1">
 						<CategoryGroup
 							title="Gastos"
 							categories={expenses}
@@ -36,7 +36,9 @@ export function CategoriesPage() {
 							onEdit={setEditingCategory}
 						/>
 					</div>
-					<CategoryForm editingCategory={editingCategory} onDone={() => setEditingCategory(null)} />
+					<div className="order-1 md:order-2">
+						<CategoryForm editingCategory={editingCategory} onDone={() => setEditingCategory(null)} />
+					</div>
 				</div>
 			)}
 		</div>

@@ -48,7 +48,9 @@ export function LoginPage() {
 			<div className="w-full max-w-sm space-y-6">
 				<div className="flex flex-col items-center gap-3">
 					<LedgerLogo className="h-9 w-9" />
-					<h1 className="text-2xl font-medium">ledger</h1>
+					<h1 className="text-2xl font-bold" style={{ fontFamily: "Arial, Helvetica, sans-serif" }}>
+						Ledger
+					</h1>
 				</div>
 
 				<form onSubmit={handleSubmit(onSubmit)} className="space-y-4">

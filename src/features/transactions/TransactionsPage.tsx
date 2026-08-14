@@ -109,184 +109,182 @@ export function TransactionsPage() {
 				)}
 			</div>
 
+			<div className="relative mb-4 flex shrink-0 flex-wrap items-end gap-3 rounded-md border border-neutral-800 bg-neutral-900 p-3 pt-6">
+				<div className="w-full sm:min-w-[160px] sm:w-auto sm:flex-1">
+					<label htmlFor="filter-search" className="mb-1 block text-xs text-neutral-500">
+						Buscar
+					</label>
+					<input
+						id="filter-search"
+						type="text"
+						placeholder="Nota o categoría..."
+						value={search}
+						onChange={(event) => setSearch(event.target.value)}
+						className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600"
+					/>
+				</div>
+				<div className="w-full sm:w-auto">
+					<label htmlFor="filter-type" className="mb-1 block text-xs text-neutral-500">
+						Tipo
+					</label>
+					<select
+						id="filter-type"
+						value={typeFilter}
+						onChange={(event) => setTypeFilter(event.target.value as TypeFilter)}
+						className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
+					>
+						<option value="all">Todos</option>
+						<option value="expense">Gasto</option>
+						<option value="income">Ingreso</option>
+					</select>
+				</div>
+				<div className="w-full sm:w-auto">
+					<label htmlFor="filter-category" className="mb-1 block text-xs text-neutral-500">
+						Categoría
+					</label>
+					<select
+						id="filter-category"
+						value={categoryFilter}
+						onChange={(event) => setCategoryFilter(event.target.value)}
+						className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
+					>
+						<option value="all">Todas</option>
+						{categories?.map((category) => (
+							<option key={category.id} value={category.id}>
+								{category.name}
+							</option>
+						))}
+					</select>
+				</div>
+				<div className="w-full sm:w-auto">
+					<label htmlFor="filter-from" className="mb-1 block text-xs text-neutral-500">
+						Desde
+					</label>
+					<input
+						id="filter-from"
+						type="date"
+						value={dateFrom}
+						onChange={(event) => setDateFrom(event.target.value)}
+						className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
+					/>
+				</div>
+				<div className="w-full sm:w-auto">
+					<label htmlFor="filter-to" className="mb-1 block text-xs text-neutral-500">
+						Hasta
+					</label>
+					<input
+						id="filter-to"
+						type="date"
+						value={dateTo}
+						onChange={(event) => setDateTo(event.target.value)}
+						className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
+					/>
+				</div>
+				{hasActiveFilters && (
+					<button
+						type="button"
+						onClick={clearFilters}
+						className="absolute right-2 top-2 flex items-center gap-1 text-xs font-medium text-red-400 hover:text-red-300"
+					>
+						<X className="h-3 w-3" /> Limpiar filtros
+					</button>
+				)}
+			</div>
+
 			<div className="grid gap-8 md:min-h-0 md:flex-1 md:grid-cols-[1fr_320px]">
-				<div className="flex min-w-0 flex-col md:min-h-0">
-					<div className="relative mb-4 flex shrink-0 flex-wrap items-end gap-3 rounded-md border border-neutral-800 bg-neutral-900 p-3 pt-6">
-						<div className="w-full sm:min-w-[160px] sm:w-auto sm:flex-1">
-							<label htmlFor="filter-search" className="mb-1 block text-xs text-neutral-500">
-								Buscar
+				<div className="order-2 min-w-0 pr-2 md:order-1 md:min-h-0 md:overflow-y-auto md:overflow-x-hidden">
+					{isLoading ? (
+						<p className="text-sm text-neutral-600">Cargando...</p>
+					) : filteredTransactions.length === 0 ? (
+						<p className="text-sm text-neutral-600">
+							{hasActiveFilters ? "Sin resultados para estos filtros." : "Sin transacciones todavía."}
+						</p>
+					) : (
+						<div className="space-y-2">
+							<label className="flex items-center gap-2 px-1 pb-1 text-xs text-neutral-500">
+								<input
+									type="checkbox"
+									checked={selectedIds.size > 0 && selectedIds.size === filteredTransactions.length}
+									onChange={(event) => {
+										if (event.target.checked) setSelectedIds(new Set(filteredTransactions.map((t) => t.id)));
+										else setSelectedIds(new Set());
+									}}
+									className="h-4 w-4 accent-neutral-100"
+								/>
+								Seleccionar todo
 							</label>
-							<input
-								id="filter-search"
-								type="text"
-								placeholder="Nota o categoría..."
-								value={search}
-								onChange={(event) => setSearch(event.target.value)}
-								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600"
-							/>
-						</div>
-						<div className="w-full sm:w-auto">
-							<label htmlFor="filter-type" className="mb-1 block text-xs text-neutral-500">
-								Tipo
-							</label>
-							<select
-								id="filter-type"
-								value={typeFilter}
-								onChange={(event) => setTypeFilter(event.target.value as TypeFilter)}
-								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
-							>
-								<option value="all">Todos</option>
-								<option value="expense">Gasto</option>
-								<option value="income">Ingreso</option>
-							</select>
-						</div>
-						<div className="w-full sm:w-auto">
-							<label htmlFor="filter-category" className="mb-1 block text-xs text-neutral-500">
-								Categoría
-							</label>
-							<select
-								id="filter-category"
-								value={categoryFilter}
-								onChange={(event) => setCategoryFilter(event.target.value)}
-								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
-							>
-								<option value="all">Todas</option>
-								{categories?.map((category) => (
-									<option key={category.id} value={category.id}>
-										{category.name}
-									</option>
-								))}
-							</select>
-						</div>
-						<div className="w-full sm:w-auto">
-							<label htmlFor="filter-from" className="mb-1 block text-xs text-neutral-500">
-								Desde
-							</label>
-							<input
-								id="filter-from"
-								type="date"
-								value={dateFrom}
-								onChange={(event) => setDateFrom(event.target.value)}
-								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
-							/>
-						</div>
-						<div className="w-full sm:w-auto">
-							<label htmlFor="filter-to" className="mb-1 block text-xs text-neutral-500">
-								Hasta
-							</label>
-							<input
-								id="filter-to"
-								type="date"
-								value={dateTo}
-								onChange={(event) => setDateTo(event.target.value)}
-								className="w-full rounded-md border border-neutral-800 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-600 sm:w-auto"
-							/>
-						</div>
-						{hasActiveFilters && (
-							<button
-								type="button"
-								onClick={clearFilters}
-								className="absolute right-2 top-2 flex items-center gap-1 text-xs font-medium text-red-400 hover:text-red-300"
-							>
-								<X className="h-3 w-3" /> Limpiar filtros
-							</button>
-						)}
-					</div>
 
-					<div className="pr-2 md:min-h-0 md:flex-1 md:overflow-y-auto md:overflow-x-hidden">
-						{isLoading ? (
-							<p className="text-sm text-neutral-600">Cargando...</p>
-						) : filteredTransactions.length === 0 ? (
-							<p className="text-sm text-neutral-600">
-								{hasActiveFilters ? "Sin resultados para estos filtros." : "Sin transacciones todavía."}
-							</p>
-						) : (
-							<div className="space-y-2">
-								<label className="flex items-center gap-2 px-1 pb-1 text-xs text-neutral-500">
-									<input
-										type="checkbox"
-										checked={selectedIds.size > 0 && selectedIds.size === filteredTransactions.length}
-										onChange={(event) => {
-											if (event.target.checked) setSelectedIds(new Set(filteredTransactions.map((t) => t.id)));
-											else setSelectedIds(new Set());
+							{filteredTransactions.map((transaction) => {
+								const category = categoriesById.get(transaction.categoryId);
+								return (
+									<div
+										key={transaction.id}
+										role="button"
+										tabIndex={0}
+										onClick={() => setSelected(transaction)}
+										onKeyDown={(event) => {
+											if (event.key === "Enter" || event.key === " ") setSelected(transaction);
 										}}
-										className="h-4 w-4 accent-neutral-100"
-									/>
-									Seleccionar todo
-								</label>
-
-								{filteredTransactions.map((transaction) => {
-									const category = categoriesById.get(transaction.categoryId);
-									return (
-										<div
-											key={transaction.id}
-											role="button"
-											tabIndex={0}
-											onClick={() => setSelected(transaction)}
-											onKeyDown={(event) => {
-												if (event.key === "Enter" || event.key === " ") setSelected(transaction);
-											}}
-											className="flex cursor-pointer items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 hover:border-neutral-700"
-										>
-											<div className="flex min-w-0 flex-1 items-center gap-3">
-												<input
-													type="checkbox"
-													checked={selectedIds.has(transaction.id)}
-													onChange={() => toggleSelected(transaction.id)}
-													onClick={(event) => event.stopPropagation()}
-													className="h-4 w-4 shrink-0 accent-neutral-100"
-												/>
-												{category && (
-													<CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4 shrink-0" />
-												)}
-												<div className="min-w-0">
-													<p className="truncate text-sm">{category?.name ?? "Sin categoría"}</p>
-													<p className="truncate text-xs text-neutral-500">
-														{transaction.date}
-														{transaction.note ? ` · ${transaction.note}` : ""}
-													</p>
-												</div>
-											</div>
-											<div className="flex shrink-0 items-center gap-3">
-												<span
-													className={`text-sm font-medium ${transaction.type === "income" ? "text-green-400" : "text-red-400"}`}
-												>
-													{transaction.type === "income" ? "+" : "-"}
-													{currency.format(transaction.amount)}
-												</span>
-												{transaction.receiptUrl && (
-													<a
-														href={transaction.receiptUrl}
-														target="_blank"
-														rel="noreferrer"
-														onClick={(event) => event.stopPropagation()}
-														className="text-neutral-600 hover:text-neutral-300"
-													>
-														<Image className="h-4 w-4" />
-													</a>
-												)}
-												<button
-													type="button"
-													onClick={async (event) => {
-														event.stopPropagation();
-														if (await confirm("¿Seguro que quieres borrar esta transacción?")) {
-															deleteTransaction.mutate(transaction);
-														}
-													}}
-													className="text-neutral-600 hover:text-red-400"
-												>
-													<Trash2 className="h-4 w-4" />
-												</button>
+										className="flex cursor-pointer items-center justify-between rounded-md border border-neutral-800 bg-neutral-900 px-3 py-2 hover:border-neutral-700"
+									>
+										<div className="flex min-w-0 flex-1 items-center gap-3">
+											<input
+												type="checkbox"
+												checked={selectedIds.has(transaction.id)}
+												onChange={() => toggleSelected(transaction.id)}
+												onClick={(event) => event.stopPropagation()}
+												className="h-4 w-4 shrink-0 accent-neutral-100"
+											/>
+											{category && (
+												<CategoryIcon icon={category.icon} color={category.color} className="h-4 w-4 shrink-0" />
+											)}
+											<div className="min-w-0">
+												<p className="truncate text-sm">{category?.name ?? "Sin categoría"}</p>
+												<p className="truncate text-xs text-neutral-500">
+													{transaction.date}
+													{transaction.note ? ` · ${transaction.note}` : ""}
+												</p>
 											</div>
 										</div>
-									);
-								})}
-							</div>
-						)}
-					</div>
+										<div className="flex shrink-0 items-center gap-3">
+											<span
+												className={`text-sm font-medium ${transaction.type === "income" ? "text-green-400" : "text-red-400"}`}
+											>
+												{transaction.type === "income" ? "+" : "-"}
+												{currency.format(transaction.amount)}
+											</span>
+											{transaction.receiptUrl && (
+												<a
+													href={transaction.receiptUrl}
+													target="_blank"
+													rel="noreferrer"
+													onClick={(event) => event.stopPropagation()}
+													className="text-neutral-600 hover:text-neutral-300"
+												>
+													<Image className="h-4 w-4" />
+												</a>
+											)}
+											<button
+												type="button"
+												onClick={async (event) => {
+													event.stopPropagation();
+													if (await confirm("¿Seguro que quieres borrar esta transacción?")) {
+														deleteTransaction.mutate(transaction);
+													}
+												}}
+												className="text-neutral-600 hover:text-red-400"
+											>
+												<Trash2 className="h-4 w-4" />
+											</button>
+										</div>
+									</div>
+								);
+							})}
+						</div>
+					)}
 				</div>
 
-				<div className="min-w-0 pr-1 md:overflow-y-auto md:overflow-x-hidden">
+				<div className="order-1 min-w-0 pr-1 md:order-2 md:overflow-y-auto md:overflow-x-hidden">
 					<TransactionForm />
 				</div>
 			</div>
