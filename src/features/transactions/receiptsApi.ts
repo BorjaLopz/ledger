@@ -1,17 +1,9 @@
-import { deleteObject, getDownloadURL, ref, uploadBytes } from "firebase/storage";
-import { storage } from "../../lib/firebase";
+import { api } from "../../lib/api";
 
-export async function uploadReceipt(uid: string, file: File): Promise<string> {
-	const path = `receipts/${uid}/${Date.now()}-${file.name}`;
-	const fileRef = ref(storage, path);
-	await uploadBytes(fileRef, file);
-	return getDownloadURL(fileRef);
-}
-
-export async function deleteReceipt(url: string): Promise<void> {
-	try {
-		await deleteObject(ref(storage, url));
-	} catch {
-		// ya no existe o la URL no resuelve; nada que limpiar
-	}
+// Devuelve la URL firmada y temporal del ticket; el backend la guarda en la transacción.
+export async function uploadReceipt(_uid: string, file: File): Promise<string> {
+	const form = new FormData();
+	form.append("file", file);
+	const { url } = await api.post<{ url: string }>("/receipts", form);
+	return url;
 }

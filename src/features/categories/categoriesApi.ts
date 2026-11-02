@@ -1,36 +1,24 @@
-import { addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where, writeBatch } from "firebase/firestore";
-import { db } from "../../lib/firebase";
+import { api } from "../../lib/api";
 import type { Category } from "../../types/finance";
 import { DEFAULT_CATEGORIES } from "./defaultCategories";
 
-const categoriesRef = collection(db, "categories");
-
-export async function fetchCategories(uid: string): Promise<Category[]> {
-	const q = query(categoriesRef, where("uid", "==", uid));
-	const snapshot = await getDocs(q);
-	return snapshot.docs.map((docSnapshot) => ({
-		id: docSnapshot.id,
-		...docSnapshot.data(),
-	})) as Category[];
+export async function fetchCategories(_uid: string): Promise<Category[]> {
+	return api.get<Category[]>("/categories");
 }
 
-export async function seedDefaultCategories(uid: string): Promise<void> {
-	const batch = writeBatch(db);
-	for (const category of DEFAULT_CATEGORIES) {
-		const ref = doc(categoriesRef);
-		batch.set(ref, { ...category, uid });
-	}
-	await batch.commit();
+// Idempotente: el backend solo crea las categorías si el usuario no tiene ninguna.
+export async function seedDefaultCategories(_uid: string): Promise<void> {
+	await api.post("/categories/bulk", DEFAULT_CATEGORIES);
 }
 
-export async function createCategory(uid: string, data: Omit<Category, "id" | "uid">): Promise<void> {
-	await addDoc(categoriesRef, { ...data, uid });
+export async function createCategory(_uid: string, data: Omit<Category, "id" | "uid">): Promise<void> {
+	await api.post("/categories", data);
 }
 
 export async function updateCategory(id: string, data: Partial<Omit<Category, "id" | "uid">>): Promise<void> {
-	await updateDoc(doc(db, "categories", id), data);
+	await api.patch(`/categories/${id}`, data);
 }
 
 export async function deleteCategory(id: string): Promise<void> {
-	await deleteDoc(doc(db, "categories", id));
+	await api.delete(`/categories/${id}`);
 }
