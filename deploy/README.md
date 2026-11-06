@@ -60,3 +60,10 @@ Comandos: `/resumen` (mes actual), `/resumen 2026-10` (un mes), `/resumen 2026` 
 **Informes automáticos** (hora de Madrid): resumen semanal los **domingos a las 20:00** (lunes a domingo) y resumen del mes anterior el **día 1 a las 09:00**. El bot se comprueba cada minuto dentro de esa hora; si estaba apagado en esa franja, ese informe se pierde, y si se reinicia dentro de ella puede repetirse una vez.
 
 Seguridad: el bot solo responde a tu ID de Telegram y en chat privado; la API del bot (`/api/bot/*`) solo acepta la clave `BOT_API_KEY`, y nginx la bloquea desde fuera, así que solo es alcanzable dentro de la red de Docker. Trata `BOT_API_KEY` y el token como contraseñas.
+
+### Menú de comandos y categorías (v1.2)
+
+- Al arrancar, el bot registra el menú `/` de Telegram (resumen, ultimo, categorias, nuevacategoria, cancelar, ayuda).
+- `/categorias`: lista agrupada con uso; tocar una permite renombrar, cambiar icono o eliminar. Si tiene movimientos/recurrentes, pregunta a qué categoría pasarlos.
+- `/nuevacategoria`: tipo → nombre → icono; el color se elige solo (el menos usado).
+- No hay variables nuevas: `docker compose --env-file .env up -d --build`.

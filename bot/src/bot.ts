@@ -3,9 +3,11 @@ import { Bot, InlineKeyboard, type Context } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import { ApiError, type Category, type LedgerClient, type Tx } from "./api.js";
 import { dateInZone, formatSummary, money, shortDate } from "./format.js";
+import { COMMANDS } from "./commands.js";
+import { registerCategories } from "./categories.js";
 import { parseEntry, type ParsedEntry } from "./parser.js";
 
-export { dateInZone, money };
+export { dateInZone, money, COMMANDS };
 
 export interface BotDeps {
   token: string;
@@ -50,8 +52,7 @@ const HELP = [
   "",
   "Luego puedes enviarme una foto para guardarla como ticket del último movimiento.",
   "",
-  "/resumen: resumen del mes (o /resumen 2026-10, o /resumen 2026 para el año)",
-  "/ultimo: último movimiento",
+  ...COMMANDS.map((c) => `/${c.command}: ${c.description}`),
 ].join("\n");
 
 const txLine = (t: Tx, categoryName?: string): string =>
@@ -78,6 +79,8 @@ export function createBot(deps: BotDeps): Bot {
     if (ctx.chat?.type !== "private" || ctx.from?.id !== deps.allowedId) return;
     await next();
   });
+
+  const categories = registerCategories(bot, deps.api);
 
   bot.command(["start", "ayuda", "help"], (ctx) => ctx.reply(HELP));
 
@@ -108,6 +111,7 @@ export function createBot(deps: BotDeps): Bot {
   });
 
   bot.on("message:text", async (ctx) => {
+    if (await categories.handleText(ctx)) return;
     const text = ctx.message.text;
     if (text.startsWith("/")) {
       await ctx.reply("No conozco ese comando. /ayuda");

@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import type { UserFromGetMe } from "grammy/types";
-import { ApiError, type Category, type LedgerClient, type NewTx, type Suggestion, type Summary, type SummaryRange, type Tx } from "./api.js";
-import { createBot, dateInZone } from "./bot.js";
+import { ApiError, type Category, type CategoryInput, type CategoryUsage, type LedgerClient, type NewTx, type Suggestion, type Summary, type SummaryRange, type Tx } from "./api.js";
+import { COMMANDS, createBot, dateInZone } from "./bot.js";
+import { pickColor } from "./categories.js";
 
 const CATS: Category[] = [
   { id: "c-super", name: "Supermercado", type: "expense", icon: "x", color: "#fff" },
@@ -20,8 +21,32 @@ class FakeApi implements LedgerClient {
   /** "expense:café" -> id de categoria */
   suggestions = new Map<string, string>();
   failSuggest = false;
+  cats: Category[] = [...CATS];
+  usage: Record<string, [number, number]> = { "c-ocio": [5, 1] };
+  catCalls: string[] = [];
   async categories() {
-    return CATS;
+    return this.cats;
+  }
+  async categoryUsage(): Promise<CategoryUsage[]> {
+    return this.cats.map((c) => ({ ...c, transactions: this.usage[c.id]?.[0] ?? 0, recurring: this.usage[c.id]?.[1] ?? 0 }));
+  }
+  async createCategory(input: Required<CategoryInput>): Promise<Category> {
+    this.catCalls.push(`create ${JSON.stringify(input)}`);
+    const c: Category = { id: `n${this.cats.length}`, ...input };
+    this.cats.push(c);
+    return c;
+  }
+  async updateCategory(id: string, input: CategoryInput): Promise<Category> {
+    this.catCalls.push(`update ${id} ${JSON.stringify(input)}`);
+    if (input.name && this.cats.some((c) => c.id !== id && c.name === input.name)) throw new ApiError(409, "dup");
+    const c = this.cats.find((x) => x.id === id)!;
+    Object.assign(c, input);
+    return c;
+  }
+  async deleteCategory(id: string, moveTo?: string): Promise<number> {
+    this.catCalls.push(`delete ${id} ${moveTo ?? ""}`.trim());
+    this.cats = this.cats.filter((c) => c.id !== id);
+    return moveTo ? 6 : 0;
   }
   async createTransaction(input: NewTx): Promise<Tx> {
     if (this.failNextCreate) {
@@ -300,5 +325,141 @@ describe("comandos y seguridad", () => {
     assert.equal(h.calls.length, 0);
     assert.equal(h.api.created.length, 0);
     assert.equal(h.api.deleted.length, 0);
+  });
+});
+
+describe("menu de comandos", () => {
+  it("expone los comandos con descripcion y el /ayuda los lista", async () => {
+    const h = setup();
+    assert.ok(COMMANDS.every((c) => /^[a-z]{1,32}$/.test(c.command) && c.description.length >= 3 && c.description.length <= 256));
+    await h.text("/ayuda");
+    const text = h.last("sendMessage")!.payload.text as string;
+    for (const c of COMMANDS) assert.ok(text.includes(`/${c.command}`), c.command);
+  });
+});
+
+describe("gestion de categorias", () => {
+  let h: ReturnType<typeof setup>;
+  beforeEach(() => {
+    h = setup();
+  });
+  const pid = (data: string) => data.split(":")[1]!;
+
+  it("/categorias lista agrupado y con uso", async () => {
+    await h.text("/categorias");
+    const m = h.last("sendMessage")!;
+    assert.match(m.payload.text, /Gastos:/);
+    assert.match(m.payload.text, /Ocio · 5 mov\., 1 recurrente/);
+    assert.match(m.payload.text, /Ingresos:/);
+    const data = h.buttons(m);
+    assert.ok(data.some((d) => /^kn:[0-9a-f]{8}:e$/.test(d)));
+    assert.ok(data.every((d) => Buffer.byteLength(d) <= 64));
+  });
+
+  it("renombra: boton -> texto -> API", async () => {
+    await h.text("/categorias");
+    const open = h.buttons(h.last("sendMessage")).find((d) => d.startsWith("k:"))!; // Ocio (orden alfabetico)
+    await h.press(open);
+    const rename = h.buttons(h.last("editMessageText")).find((d) => d.startsWith("kr:"))!;
+    await h.press(rename);
+    await h.text("Diversión");
+    assert.deepEqual(h.api.catCalls, ['update c-ocio {"name":"Diversión"}']);
+    assert.match(h.last("sendMessage")!.payload.text, /Renombrada a «Diversión»/);
+    // ya no espera texto: se interpreta como gasto normal
+    await h.text("3 pan");
+    assert.match(h.last("sendMessage")!.payload.text, /Elige categoría/);
+  });
+
+  it("nombre duplicado al renombrar sigue esperando", async () => {
+    await h.text("/categorias");
+    await h.press(h.buttons(h.last("sendMessage")).find((d) => d.startsWith("k:"))!);
+    await h.press(h.buttons(h.last("editMessageText")).find((d) => d.startsWith("kr:"))!);
+    await h.text("Supermercado");
+    assert.match(h.last("sendMessage")!.payload.text, /Ya tienes una categoría/);
+    await h.text("Cine");
+    assert.match(h.last("sendMessage")!.payload.text, /Renombrada a «Cine»/);
+  });
+
+  it("crea: tipo -> nombre -> icono, con color automatico", async () => {
+    await h.text("/nuevacategoria");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!.replace(/:e$/, ":e"));
+    await h.text("Mascotas");
+    const grid = h.last("sendMessage")!;
+    assert.match(grid.payload.text, /icono para «Mascotas»/);
+    const pick = h.buttons(grid)[19]!; // PawPrint
+    await h.press(pick);
+    assert.equal(h.api.catCalls.length, 1);
+    const call = JSON.parse(h.api.catCalls[0]!.replace("create ", ""));
+    assert.deepEqual({ ...call, color: "x" }, { name: "Mascotas", type: "expense", icon: "PawPrint", color: "x" });
+    assert.match(call.color, /^#[0-9a-f]{6}$/);
+    assert.match(h.last("editMessageText")!.payload.text, /«Mascotas» creada/);
+  });
+
+  it("no crea duplicados (ignora tildes y mayusculas)", async () => {
+    await h.text("/nuevacategoria");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!);
+    await h.text("supermercado");
+    assert.match(h.last("sendMessage")!.payload.text, /Ya tienes una categoría/);
+    assert.equal(h.api.catCalls.length, 0);
+  });
+
+  it("un comando cancela la espera de nombre", async () => {
+    await h.text("/nuevacategoria");
+    await h.press(h.buttons(h.last("sendMessage"))[1]!); // ingreso
+    await h.text("/cancelar");
+    await h.text("12 café");
+    assert.match(h.last("sendMessage")!.payload.text, /Elige categoría/);
+  });
+
+  it("cambia el icono", async () => {
+    await h.text("/categorias");
+    await h.press(h.buttons(h.last("sendMessage")).find((d) => d.startsWith("k:"))!);
+    await h.press(h.buttons(h.last("editMessageText")).find((d) => d.startsWith("ki:"))!);
+    const grid = h.buttons(h.last("editMessageText"));
+    assert.equal(grid.length, 24);
+    await h.press(grid[16]!); // Plane
+    assert.deepEqual(h.api.catCalls, ['update c-ocio {"icon":"Plane"}']);
+  });
+
+  it("elimina una categoria sin uso tras confirmar", async () => {
+    await h.text("/categorias");
+    const data = h.buttons(h.last("sendMessage"));
+    await h.press(data.find((d) => d.startsWith("k:") && d.endsWith(":1"))!); // Supermercado
+    await h.press(h.buttons(h.last("editMessageText")).find((d) => d.startsWith("kd:"))!);
+    assert.match(h.last("editMessageText")!.payload.text, /¿Eliminar «Supermercado»\?/);
+    await h.press(h.buttons(h.last("editMessageText")).find((d) => d.startsWith("ky:"))!);
+    assert.deepEqual(h.api.catCalls, ["delete c-super"]);
+  });
+
+  it("elimina una categoria con uso moviendola a otra", async () => {
+    await h.text("/categorias");
+    await h.press(h.buttons(h.last("sendMessage")).find((d) => d.startsWith("k:") && d.endsWith(":0"))!); // Ocio
+    await h.press(h.buttons(h.last("editMessageText")).find((d) => d.startsWith("kd:"))!);
+    const ask = h.last("editMessageText")!;
+    assert.match(ask.payload.text, /¿a qué categoría los paso\?/);
+    const moves = h.buttons(ask).filter((d) => d.startsWith("km:"));
+    assert.equal(moves.length, 1); // solo Supermercado (mismo tipo)
+    await h.press(moves[0]!);
+    assert.deepEqual(h.api.catCalls, ["delete c-ocio c-super"]);
+    assert.match(h.last("editMessageText")!.payload.text, /6 elemento\(s\) pasados a «Supermercado»/);
+  });
+
+  it("no deja borrar si no hay otra categoria del mismo tipo", async () => {
+    h.api.usage["c-nomina"] = [2, 0];
+    await h.text("/categorias");
+    await h.press(h.buttons(h.last("sendMessage")).find((d) => d.startsWith("k:") && d.endsWith(":2"))!);
+    await h.press(h.buttons(h.last("editMessageText")).find((d) => d.startsWith("kd:"))!);
+    assert.match(h.last("editMessageText")!.payload.text, /Crea otra primero/);
+    assert.equal(h.api.catCalls.length, 0);
+  });
+
+  it("botones caducados avisan", async () => {
+    await h.press("k:deadbeef:0");
+    assert.equal(h.last("answerCallbackQuery")!.payload.show_alert, true);
+  });
+
+  it("pickColor elige el menos usado", () => {
+    assert.equal(pickColor([]), "#f97316");
+    assert.equal(pickColor([{ color: "#f97316" }, { color: "#f97316" }, { color: "#eab308" }]), "#84cc16");
   });
 });

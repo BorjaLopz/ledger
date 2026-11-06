@@ -33,6 +33,18 @@ export interface Suggestion {
   count: number;
 }
 
+export interface CategoryUsage extends Category {
+  transactions: number;
+  recurring: number;
+}
+
+export interface CategoryInput {
+  name?: string;
+  type?: "expense" | "income";
+  icon?: string;
+  color?: string;
+}
+
 export interface NewTx {
   type: "expense" | "income";
   amount: number;
@@ -59,6 +71,11 @@ export interface LedgerClient {
   deleteTransaction(id: string): Promise<boolean>;
   summary(range?: SummaryRange): Promise<Summary>;
   suggestCategory(note: string, type: "expense" | "income"): Promise<Suggestion | null>;
+  categoryUsage(): Promise<CategoryUsage[]>;
+  createCategory(input: Required<CategoryInput>): Promise<Category>;
+  updateCategory(id: string, input: CategoryInput): Promise<Category>;
+  /** Con `moveTo` reasigna movimientos y recurrentes antes de borrar. Devuelve cuantos movio. */
+  deleteCategory(id: string, moveTo?: string): Promise<number>;
 }
 
 export class LedgerApi implements LedgerClient {
@@ -140,5 +157,37 @@ export class LedgerApi implements LedgerClient {
     const res = await this.request(`/suggest?${new URLSearchParams({ note, type }).toString()}`);
     if (res.status === 404) return null;
     return this.json<Suggestion>(res);
+  }
+
+  async categoryUsage(): Promise<CategoryUsage[]> {
+    return this.json<CategoryUsage[]>(await this.request("/categories/usage"));
+  }
+
+  async createCategory(input: Required<CategoryInput>): Promise<Category> {
+    return this.json<Category>(
+      await this.request("/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    );
+  }
+
+  async updateCategory(id: string, input: CategoryInput): Promise<Category> {
+    return this.json<Category>(
+      await this.request(`/categories/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    );
+  }
+
+  async deleteCategory(id: string, moveTo?: string): Promise<number> {
+    const query = moveTo ? `?${new URLSearchParams({ moveTo }).toString()}` : "";
+    const body = await this.json<{ moved: number }>(
+      await this.request(`/categories/${encodeURIComponent(id)}${query}`, { method: "DELETE" }),
+    );
+    return body.moved;
   }
 }

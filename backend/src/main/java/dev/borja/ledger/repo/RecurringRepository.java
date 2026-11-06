@@ -15,6 +15,10 @@ public interface RecurringRepository extends JpaRepository<RecurringPayment, Str
 
     Optional<RecurringPayment> findByIdAndUid(String id, String uid);
 
+    long countByUidAndCategoryId(String uid, String categoryId);
+
+    List<RecurringPayment> findByUidAndCategoryId(String uid, String categoryId);
+
     /** Bloquea las filas para que dos sincronizaciones simultaneas no dupliquen transacciones. */
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select r from RecurringPayment r where r.uid = :uid and r.active = true and r.nextDate <= :today")

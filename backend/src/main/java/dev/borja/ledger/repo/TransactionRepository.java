@@ -11,4 +11,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, String
     Optional<Transaction> findByIdAndUid(String id, String uid);
 
     Optional<Transaction> findFirstByUidOrderByCreatedAtDesc(String uid);
+
+    long countByUidAndCategoryId(String uid, String categoryId);
+
+    List<Transaction> findByUidAndCategoryId(String uid, String categoryId);
 }

@@ -1,5 +1,6 @@
 import { createBot } from "./bot.js";
 import { LedgerApi } from "./api.js";
+import { COMMANDS } from "./commands.js";
 import { startReports } from "./scheduler.js";
 
 function required(name: string): string {
@@ -55,5 +56,9 @@ process.once("SIGINT", stop);
 process.once("SIGTERM", stop);
 
 await bot.start({
-  onStart: (me) => console.log(`Bot @${me.username} escuchando (long polling)`),
+  onStart: (me) => {
+    console.log(`Bot @${me.username} escuchando (long polling)`);
+    // Menu "/" con descripciones; si falla no es critico.
+    bot.api.setMyCommands(COMMANDS.map((c) => ({ ...c }))).catch((err) => console.error("setMyCommands:", String(err).replaceAll(token, "***")));
+  },
 });

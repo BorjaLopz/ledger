@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.node.ObjectNode;
 import dev.borja.ledger.model.Category;
 import dev.borja.ledger.model.Transaction;
 import dev.borja.ledger.repo.CategoryRepository;
+import dev.borja.ledger.repo.RecurringRepository;
 import dev.borja.ledger.repo.TransactionRepository;
 import dev.borja.ledger.service.EntityPatcher;
 import dev.borja.ledger.service.ReceiptService;
@@ -28,6 +29,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -53,14 +55,17 @@ public class BotController {
     private final CategoryRepository categories;
     private final EntityPatcher patcher;
     private final ReceiptService receipts;
+    private final RecurringRepository recurring;
     private final ZoneId zone;
 
     public BotController(TransactionRepository transactions, CategoryRepository categories, EntityPatcher patcher,
-                         ReceiptService receipts, @Value("${app.timezone}") String timezone) {
+                         ReceiptService receipts, RecurringRepository recurring,
+                         @Value("${app.timezone}") String timezone) {
         this.transactions = transactions;
         this.categories = categories;
         this.patcher = patcher;
         this.receipts = receipts;
+        this.recurring = recurring;
         this.zone = ZoneId.of(timezone);
     }
 
@@ -232,5 +237,130 @@ public class BotController {
                 .replaceAll("\\p{M}", "")
                 .toLowerCase(Locale.ROOT)
                 .trim();
+    }
+
+    // ---- Gestion de categorias ----
+
+    public record CategoryUsage(String id, String name, String type, String icon, String color,
+                                long transactions, long recurring) {}
+
+    public record CategoryInput(String name, String type, String icon, String color) {}
+
+    private static final Set<String> COLORS = Set.of("#f97316", "#eab308", "#84cc16", "#22c55e", "#14b8a6",
+            "#06b6d4", "#3b82f6", "#a855f7", "#ec4899", "#f43f5e", "#6b7280");
+
+    private boolean nameTaken(String uid, String type, String name, String exceptId) {
+        String wanted = normalize(name.trim());
+        return categories.findByUid(uid).stream()
+                .anyMatch(c -> c.type.equals(type) && !c.id.equals(exceptId) && normalize(c.name).equals(wanted));
+    }
+
+    private static String cleanName(String raw) {
+        String name = raw == null ? "" : raw.trim();
+        if (name.isEmpty() || name.length() > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "El nombre debe tener entre 1 y 100 caracteres");
+        }
+        return name;
+    }
+
+    private static void checkColor(String color) {
+        if (!COLORS.contains(color)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Color no valido");
+        }
+    }
+
+    /** Categorias con el numero de movimientos y pagos recurrentes que las usan. */
+    @GetMapping("/categories/usage")
+    public List<CategoryUsage> categoryUsage(@AuthenticationPrincipal Jwt jwt) {
+        String uid = jwt.getSubject();
+        return categories.findByUid(uid).stream()
+                .map(c -> new CategoryUsage(c.id, c.name, c.type, c.icon, c.color,
+                        transactions.countByUidAndCategoryId(uid, c.id),
+                        recurring.countByUidAndCategoryId(uid, c.id)))
+                .toList();
+    }
+
+    @PostMapping("/categories")
+    @ResponseStatus(HttpStatus.CREATED)
+    public Category createCategory(@AuthenticationPrincipal Jwt jwt, @RequestBody CategoryInput in) {
+        String uid = jwt.getSubject();
+        if (in == null || in.type() == null || !(in.type().equals("expense") || in.type().equals("income"))) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "type debe ser expense o income");
+        }
+        String name = cleanName(in.name());
+        if (in.icon() == null || in.icon().isBlank() || in.icon().length() > 60) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Icono no valido");
+        }
+        checkColor(in.color());
+        if (nameTaken(uid, in.type(), name, null)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe una categoria con ese nombre");
+        }
+        Category c = new Category();
+        c.uid = uid;
+        c.name = name;
+        c.type = in.type();
+        c.icon = in.icon();
+        c.color = in.color();
+        return categories.save(c);
+    }
+
+    /** Cambia nombre, icono y/o color. El tipo no se puede cambiar. */
+    @PatchMapping("/categories/{id}")
+    @Transactional
+    public Category updateCategory(@AuthenticationPrincipal Jwt jwt, @PathVariable String id,
+                                   @RequestBody CategoryInput in) {
+        String uid = jwt.getSubject();
+        Category c = categories.findByIdAndUid(id, uid)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (in.name() != null) {
+            String name = cleanName(in.name());
+            if (nameTaken(uid, c.type, name, c.id)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Ya existe una categoria con ese nombre");
+            }
+            c.name = name;
+        }
+        if (in.icon() != null) {
+            if (in.icon().isBlank() || in.icon().length() > 60) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Icono no valido");
+            }
+            c.icon = in.icon();
+        }
+        if (in.color() != null) {
+            checkColor(in.color());
+            c.color = in.color();
+        }
+        return categories.save(c);
+    }
+
+    /**
+     * Borra una categoria. Si tiene movimientos o recurrentes hay que indicar "moveTo" (otra categoria
+     * del mismo tipo) y se reasignan antes de borrar; sin "moveTo" responde 409.
+     */
+    @DeleteMapping("/categories/{id}")
+    @Transactional
+    public Map<String, Object> deleteCategory(@AuthenticationPrincipal Jwt jwt, @PathVariable String id,
+                                              @RequestParam(required = false) String moveTo) {
+        String uid = jwt.getSubject();
+        Category c = categories.findByIdAndUid(id, uid)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        List<Transaction> txs = transactions.findByUidAndCategoryId(uid, c.id);
+        var recs = recurring.findByUidAndCategoryId(uid, c.id);
+        if (!txs.isEmpty() || !recs.isEmpty()) {
+            if (moveTo == null || moveTo.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "La categoria tiene " + txs.size() + " movimientos y " + recs.size() + " recurrentes");
+            }
+            Category target = categories.findByIdAndUid(moveTo, uid)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Categoria destino no existe"));
+            if (target.id.equals(c.id) || !target.type.equals(c.type)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Destino invalido (mismo tipo y distinta)");
+            }
+            txs.forEach(t -> t.categoryId = target.id);
+            recs.forEach(r -> r.categoryId = target.id);
+            transactions.saveAll(txs);
+            recurring.saveAll(recs);
+        }
+        categories.delete(c);
+        return Map.of("deleted", c.id, "moved", txs.size() + recs.size());
     }
 }
