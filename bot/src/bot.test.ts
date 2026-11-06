@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import type { UserFromGetMe } from "grammy/types";
-import { ApiError, type NewWarranty, type TxEdit, type Warranty, type Category, type ExportScope, type MonthTotal, type CategoryInput, type CategoryUsage, type LedgerClient, type NewTx, type Suggestion, type Summary, type SummaryRange, type Tx } from "./api.js";
+import { ApiError, type NewRecurring, type Recurring, type NewWarranty, type TxEdit, type Warranty, type Category, type ExportScope, type MonthTotal, type CategoryInput, type CategoryUsage, type LedgerClient, type NewTx, type Suggestion, type Summary, type SummaryRange, type Tx } from "./api.js";
 import { COMMANDS, createBot, dateInZone } from "./bot.js";
 import { pickColor } from "./categories.js";
 
@@ -26,6 +26,36 @@ class FakeApi implements LedgerClient {
   catCalls: string[] = [];
   async categories() {
     return this.cats;
+  }
+  rlist: Recurring[] = [];
+  rCreated: NewRecurring[] = [];
+  rUpdated: { id: string; edit: { active?: boolean; amount?: number } }[] = [];
+  rDeleted: string[] = [];
+  prevSummary: Summary | null = null;
+  async recurring() {
+    return this.rlist;
+  }
+  async createRecurring(input: NewRecurring): Promise<Recurring> {
+    this.rCreated.push(input);
+    const r: Recurring = { id: `r${this.rCreated.length}`, active: true, note: "", nextDate: input.nextDate ?? "2026-11-06", ...input };
+    this.rlist.push(r);
+    return r;
+  }
+  async updateRecurring(id: string, edit: { active?: boolean; amount?: number }): Promise<Recurring> {
+    this.rUpdated.push({ id, edit });
+    const r = this.rlist.find((x) => x.id === id)!;
+    Object.assign(r, edit);
+    return r;
+  }
+  async deleteRecurring(id: string) {
+    this.rDeleted.push(id);
+    return true;
+  }
+  async syncRecurring() {
+    return 0;
+  }
+  async lastManualEntryAt() {
+    return null;
   }
   editCalls: { id: string; edit: TxEdit }[] = [];
   wlist: Warranty[] = [];
@@ -127,6 +157,7 @@ class FakeApi implements LedgerClient {
   }
   async summary(range?: SummaryRange): Promise<Summary> {
     this.summaryCalls.push(range);
+    if (this.prevSummary && range && "month" in range && range.month === "2026-10") return this.prevSummary;
     const period = !range ? "2026-11" : "month" in range ? range.month : `${range.from}/${range.to}`;
     return { period, income: 1200, expense: 300.5, balance: 899.5, expenseByCategory: [{ category: "Ocio", total: 300.5 }] };
   }
@@ -363,7 +394,7 @@ describe("comandos y seguridad", () => {
   it("/resumen AAAA-MM pide ese mes", async () => {
     const h = setup();
     await h.text("/resumen 2026-10");
-    assert.deepEqual(h.api.summaryCalls.at(-1), { month: "2026-10" });
+    assert.deepEqual(h.api.summaryCalls[0], { month: "2026-10" });
   });
 
   it("/resumen rechaza meses mal escritos", async () => {
@@ -734,5 +765,112 @@ describe("buscar y editar movimientos", () => {
     await h.text("7 pan");
     assert.equal(h.api.editCalls.length, 0);
     assert.match(h.last("sendMessage")!.payload.text, /Elige categoría/);
+  });
+});
+
+describe("recurrentes", () => {
+  let h: ReturnType<typeof setup>;
+  const R = (over: Partial<Recurring> = {}): Recurring => ({
+    id: "r0",
+    type: "expense",
+    amount: 12.99,
+    categoryId: "c-ocio",
+    frequency: "monthly",
+    nextDate: "2026-12-01",
+    active: true,
+    note: "Netflix",
+    ...over,
+  });
+  beforeEach(() => {
+    h = setup();
+  });
+
+  it("lista con importe, frecuencia y estado", async () => {
+    h.api.rlist = [R(), R({ id: "r1", note: "Gimnasio", amount: 30, active: false }), R({ id: "r2", type: "income", amount: 1200, note: "Nómina", frequency: "yearly" })];
+    await h.text("/recurrentes");
+    const t = h.last("sendMessage")!.payload.text as string;
+    assert.match(t, /🔁 Netflix · 12,99\s€\/mes · próximo 01\/12\/2026/);
+    assert.match(t, /⏸ Gimnasio · 30,00\s€\/mes · pausado/);
+    assert.match(t, /Nómina · \+1200,00\s€\/año/);
+  });
+
+  it("pausa, cambia importe y borra con confirmacion", async () => {
+    h.api.rlist = [R()];
+    await h.text("/recurrentes");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!);
+    const kb = h.buttons(h.last("editMessageText"));
+    await h.press(kb.find((b) => b.startsWith("rp:"))!);
+    assert.deepEqual(h.api.rUpdated.at(-1), { id: "r0", edit: { active: false } });
+    assert.match(h.last("editMessageText")!.payload.text, /Pausado/);
+    await h.press(kb.find((b) => b.startsWith("ra:"))!);
+    await h.text("x");
+    assert.match(h.last("sendMessage")!.payload.text, /No entiendo ese importe/);
+    await h.text("14,99");
+    assert.deepEqual(h.api.rUpdated.at(-1), { id: "r0", edit: { amount: 14.99 } });
+    await h.press(kb.find((b) => b.startsWith("rx:"))!);
+    assert.equal(h.api.rDeleted.length, 0);
+    await h.press(h.buttons(h.last("editMessageText")).find((b) => b.startsWith("ry:"))!);
+    assert.deepEqual(h.api.rDeleted, ["r0"]);
+  });
+
+  it("crear: importe y concepto, categoria, frecuencia y primer cobro", async () => {
+    await h.text("/nuevorecurrente");
+    await h.text("pagar nada");
+    assert.match(h.last("sendMessage")!.payload.text, /No he encontrado un importe/);
+    await h.text("12,99 Netflix");
+    const cats = h.buttons(h.last("sendMessage"));
+    await h.press(cats[1]!); // Ocio
+    await h.press(h.buttons(h.last("editMessageText"))[1]!); // mensual
+    await h.press(h.buttons(h.last("editMessageText"))[1]!); // mañana
+    assert.equal(h.api.rCreated.length, 1);
+    assert.deepEqual({ ...h.api.rCreated[0]!, nextDate: "x" }, {
+      type: "expense", amount: 12.99, categoryId: "c-ocio", frequency: "monthly", nextDate: "x", note: "Netflix",
+    });
+    assert.equal(h.api.rCreated[0]!.nextDate, dateInZone(-1, "Europe/Madrid"));
+    assert.match(h.last("sendMessage")!.payload.text, /Pago recurrente guardado/);
+  });
+
+  it("crear un ingreso con fecha escrita", async () => {
+    await h.text("/nuevorecurrente");
+    await h.text("+1200 nómina");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!); // Nómina
+    await h.press(h.buttons(h.last("editMessageText"))[1]!); // mensual
+    await h.press(h.buttons(h.last("editMessageText"))[2]!); // otra fecha
+    await h.text("ayer");
+    assert.match(h.last("sendMessage")!.payload.text, /No entiendo esa fecha/);
+    await h.text("01/12/2026");
+    assert.equal(h.api.rCreated[0]!.type, "income");
+    assert.equal(h.api.rCreated[0]!.nextDate, "2026-12-01");
+  });
+});
+
+describe("comparativa con el mes anterior", () => {
+  it("/resumen anade lo que ha cambiado frente al mes anterior", async () => {
+    const h = setup();
+    h.api.prevSummary = {
+      period: "2026-10",
+      income: 1000,
+      expense: 200.5,
+      balance: 799.5,
+      expenseByCategory: [{ category: "Ocio", total: 100.5 }, { category: "Café", total: 100 }],
+    };
+    await h.text("/resumen");
+    const t = h.last("sendMessage")!.payload.text as string;
+    assert.match(t, /↔️ Frente a 2026-10:/);
+    assert.match(t, /Gastos: 300,50\s€ \(\+50 %, \+100,00\s€\)/);
+    assert.match(t, /Ingresos: 1200,00\s€ \(\+20 %, \+200,00\s€\)/);
+    assert.match(t, /Café: -100,00\s€ \(-100 %\)/);
+    assert.match(t, /Ocio: \+200,00\s€ \(\+199 %\)/);
+  });
+
+  it("sin datos del mes anterior no anade nada", async () => {
+    const h = setup();
+    const real = h.api.summary.bind(h.api);
+    h.api.summary = async (r?: SummaryRange) =>
+      r && "month" in r && r.month === "2026-09"
+        ? { period: "2026-09", income: 0, expense: 0, balance: 0, expenseByCategory: [] }
+        : real(r);
+    await h.text("/resumen 2026-10");
+    assert.ok(!(h.last("sendMessage")!.payload.text as string).includes("Frente a"));
   });
 });

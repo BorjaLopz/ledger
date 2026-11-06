@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import type { LedgerClient, Summary, SummaryRange, Warranty } from "./api.js";
-import { reportsDue, startReports, startWarrantyNotices, warrantyNotice } from "./scheduler.js";
+import { daysSince, inactivityNotice, reportsDue, startInactivityReminder, startRecurringSync, startReports, startWarrantyNotices, warrantyNotice } from "./scheduler.js";
 
 const TZ = "Europe/Madrid";
 const at = (y: number, m: number, d: number, h: number, min = 0) => Date.UTC(y, m - 1, d, h, min);
@@ -61,7 +61,7 @@ test("startReports envia el informe una sola vez aunque haya varios ticks", asyn
   await wait(60);
   stop();
   assert.equal(sent.length, 1);
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2); // el periodo y el anterior (comparativa)
   assert.match(sent[0]!, /📅 Resumen semanal · 02\/11 – 08\/11/);
   assert.match(sent[0]!, /Gastos: 10,00\s€/);
 });
@@ -168,4 +168,68 @@ test("el aviso de garantias sale una vez al dia a las 10:xx", async () => {
     stop();
     assert.equal(sent.length, expected);
   }
+});
+
+test("el informe incluye el periodo con el que comparar", () => {
+  assert.deepEqual(reportsDue(at(2026, 11, 8, 19, 5), TZ)[0]?.compare, { from: "2026-10-26", to: "2026-11-01" });
+  assert.deepEqual(reportsDue(at(2026, 12, 1, 8, 10), TZ)[0]?.compare, { month: "2026-10" });
+  assert.deepEqual(reportsDue(at(2027, 1, 1, 8, 0), TZ)[0]?.compare, { month: "2026-11" });
+});
+
+test("daysSince cuenta dias naturales en la zona local", () => {
+  // 23:30 UTC del 1 es ya dia 2 en Madrid
+  assert.equal(daysSince("2026-11-01T23:30:00Z", at(2026, 11, 8, 12), TZ), 6);
+  assert.equal(daysSince("2026-11-01T10:00:00Z", at(2026, 11, 8, 12), TZ), 7);
+  assert.equal(daysSince("2026-11-08T05:00:00Z", at(2026, 11, 8, 12), TZ), 0);
+});
+
+test("el recordatorio solo toca a los 7, 14, 21... dias", () => {
+  for (const d of [0, 1, 6, 8, 13, 15]) assert.equal(inactivityNotice(d), null, String(d));
+  assert.match(inactivityNotice(7)!, /Llevas 7 días/);
+  assert.match(inactivityNotice(14)!, /Llevas 14 días/);
+});
+
+test("recordatorio a las 19:xx y sincronizacion de recurrentes a las 06:xx", async () => {
+  const run = async (starter: typeof startInactivityReminder, hourUtc: number, api: Partial<LedgerClient>) => {
+    const sent: string[] = [];
+    const stop = starter({
+      api: api as LedgerClient,
+      timeZone: TZ,
+      intervalMs: 5,
+      now: () => at(2026, 11, 8, hourUtc, 5),
+      send: async (t) => {
+        sent.push(t);
+      },
+    });
+    await wait(60);
+    stop();
+    return sent;
+  };
+  const sevenDaysAgo = "2026-11-01T10:00:00Z";
+  assert.equal((await run(startInactivityReminder, 18, { lastManualEntryAt: async () => sevenDaysAgo })).length, 1); // 19:05
+  assert.equal((await run(startInactivityReminder, 12, { lastManualEntryAt: async () => sevenDaysAgo })).length, 0); // 13:05
+  assert.equal((await run(startInactivityReminder, 18, { lastManualEntryAt: async () => "2026-11-05T10:00:00Z" })).length, 0);
+  assert.equal((await run(startInactivityReminder, 18, { lastManualEntryAt: async () => null })).length, 0);
+  assert.equal((await run(startRecurringSync, 5, { syncRecurring: async () => 2 })).length, 1); // 06:05
+  assert.equal((await run(startRecurringSync, 5, { syncRecurring: async () => 0 })).length, 0);
+});
+
+test("el informe mensual lleva la comparativa", async () => {
+  const sent: string[] = [];
+  const prev: Summary = { period: "2026-10", income: 100, expense: 50, balance: 50, expenseByCategory: [{ category: "Ocio", total: 50 }] };
+  const cur: Summary = { period: "2026-11", income: 100, expense: 100, balance: 0, expenseByCategory: [{ category: "Ocio", total: 100 }] };
+  const stop = startReports({
+    api: { summary: async (r?: SummaryRange) => (r && "month" in r && r.month === "2026-10" ? prev : cur) } as unknown as LedgerClient,
+    timeZone: TZ,
+    intervalMs: 5,
+    now: () => at(2026, 12, 1, 8, 10),
+    send: async (t) => {
+      sent.push(t);
+    },
+  });
+  await wait(60);
+  stop();
+  assert.equal(sent.length, 1);
+  assert.match(sent[0]!, /Frente a 2026-10/);
+  assert.match(sent[0]!, /\+100 %/);
 });

@@ -4,6 +4,8 @@ export const COMMANDS = [
   { command: "grafico", description: "Gráfico de gastos por categoría (o /grafico 2026-10)" },
   { command: "balance", description: "Gráfico de ingresos y gastos por mes (o /balance 6)" },
   { command: "exportar", description: "Descargar movimientos en CSV (o /exportar 2026)" },
+  { command: "recurrentes", description: "Ver, pausar o borrar pagos recurrentes" },
+  { command: "nuevorecurrente", description: "Crear un pago recurrente (suscripción, nómina…)" },
   { command: "buscar", description: "Buscar movimientos por nota, categoría o importe" },
   { command: "ultimo", description: "Ver, editar o borrar el último movimiento" },
   { command: "garantias", description: "Ver tus garantías y cuándo caducan" },

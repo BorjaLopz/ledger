@@ -2,11 +2,12 @@ import { randomBytes } from "node:crypto";
 import { Bot, InlineKeyboard, InputFile, type Context } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import { ApiError, type Category, type LedgerClient, type Tx } from "./api.js";
-import { dateInZone, formatSummary, money, shortDate } from "./format.js";
+import { dateInZone, formatSummary, money, prevMonth, shortDate } from "./format.js";
 import { COMMANDS } from "./commands.js";
 import { registerCategories } from "./categories.js";
 import { InputState } from "./input.js";
 import { registerMovements } from "./movements.js";
+import { registerRecurring } from "./recurring.js";
 import { registerWarranties } from "./warranties.js";
 import { monthlyChart, summaryChart } from "./charts.js";
 import { parsePeriod } from "./period.js";
@@ -93,6 +94,7 @@ export function createBot(deps: BotDeps): Bot {
   });
   registerCategories(bot, deps.api, input);
   registerMovements(bot, { api: deps.api, input, timeZone: deps.timeZone });
+  registerRecurring(bot, { api: deps.api, input, timeZone: deps.timeZone });
   const warranties = registerWarranties(bot, { api: deps.api, input, timeZone: deps.timeZone, download: deps.download });
 
   bot.command(["start", "ayuda", "help"], (ctx) => ctx.reply(HELP));
@@ -105,7 +107,13 @@ export function createBot(deps: BotDeps): Bot {
       const s = await deps.api.summary({ from: `${p.year}-01-01`, to: `${p.year}-12-31` });
       await ctx.reply(formatSummary(s, `📊 Año ${p.year}`));
     } else {
-      await ctx.reply(formatSummary(await deps.api.summary(p.kind === "month" ? { month: p.month } : undefined), "📊 Resumen"));
+      // mes pedido (o el actual) frente al mes anterior
+      const month = p.kind === "month" ? p.month : dateInZone(0, deps.timeZone).slice(0, 7);
+      const [s, before] = await Promise.all([
+        deps.api.summary(p.kind === "month" ? { month } : undefined),
+        deps.api.summary({ month: prevMonth(month) }).catch(() => undefined),
+      ]);
+      await ctx.reply(formatSummary(s, "📊 Resumen", before));
     }
   });
 

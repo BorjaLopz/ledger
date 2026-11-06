@@ -83,3 +83,11 @@ Seguridad: el bot solo responde a tu ID de Telegram y en chat privado; la API de
 - Aviso diario a las 10:00 (hora de `TZ`) si alguna garantía caduca en 30, 7 o 1 días, o hoy.
 - `/buscar <texto>`: busca en nota, categoría o importe exacto; desde el resultado se edita importe, categoría, fecha y nota, se ve el ticket o se borra. `/ultimo` también permite editar.
 - Nueva migración Flyway `V2__warranties.sql` (se aplica sola al arrancar `ledger-api`; las copias de seguridad de Postgres ya la incluyen).
+
+### Recurrentes, comparativa y recordatorio (v1.5)
+
+- `/recurrentes`: lista de pagos recurrentes (🔁 activo, ⏸ pausado); pausar/reanudar, cambiar importe, eliminar. Al reanudar no se cobran de golpe los periodos en que estuvo pausado.
+- `/nuevorecurrente`: «12,99 Netflix» (o «+1200 nómina» para ingresos) → categoría → semanal/mensual/anual → primer cobro (hoy, mañana u otra fecha). Si el primer cobro es hoy, se registra al momento.
+- Cada día a las 06:00 el bot registra los recurrentes vencidos (ya no hace falta abrir la web) y avisa si hubo alguno.
+- `/resumen` y los informes semanal/mensual comparan con el periodo anterior (variación total y las 3 categorías que más cambian).
+- Recordatorio a las 19:00 si llevas 7, 14, 21… días sin apuntar nada a mano (los recurrentes no cuentan).

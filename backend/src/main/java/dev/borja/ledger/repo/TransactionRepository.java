@@ -12,6 +12,9 @@ public interface TransactionRepository extends JpaRepository<Transaction, String
 
     Optional<Transaction> findFirstByUidOrderByCreatedAtDesc(String uid);
 
+    /** Ultimo movimiento apuntado a mano (sin contar los generados por pagos recurrentes). */
+    Optional<Transaction> findFirstByUidAndRecurringIdIsNullOrderByCreatedAtDesc(String uid);
+
     long countByUidAndCategoryId(String uid, String categoryId);
 
     List<Transaction> findByUidAndCategoryId(String uid, String categoryId);

@@ -537,4 +537,13 @@ public class BotController {
         }
         return TransactionResponse.from(transactions.save(t), receipts);
     }
+
+    public record Activity(java.time.Instant lastManualAt) {}
+
+    /** Cuando se apunto el ultimo movimiento a mano (null si nunca). Sirve para el recordatorio de inactividad. */
+    @GetMapping("/activity")
+    public Activity activity(@AuthenticationPrincipal Jwt jwt) {
+        return new Activity(transactions.findFirstByUidAndRecurringIdIsNullOrderByCreatedAtDesc(jwt.getSubject())
+                .map(t -> t.createdAt).orElse(null));
+    }
 }

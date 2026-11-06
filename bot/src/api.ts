@@ -14,6 +14,31 @@ export interface Tx {
   date: string;
   note: string;
   receiptUrl: string | null;
+  /** ISO instant; lo rellena la API */
+  createdAt?: string;
+}
+
+export type Frequency = "weekly" | "monthly" | "yearly";
+
+export interface Recurring {
+  id: string;
+  type: "expense" | "income";
+  amount: number;
+  categoryId: string;
+  frequency: Frequency;
+  /** Proximo cobro YYYY-MM-DD */
+  nextDate: string;
+  active: boolean;
+  note: string;
+}
+
+export interface NewRecurring {
+  type: "expense" | "income";
+  amount: number;
+  categoryId: string;
+  frequency: Frequency;
+  nextDate?: string;
+  note?: string;
 }
 
 export interface Summary {
@@ -107,6 +132,14 @@ export interface LedgerClient {
   deleteTransaction(id: string): Promise<boolean>;
   summary(range?: SummaryRange): Promise<Summary>;
   suggestCategory(note: string, type: "expense" | "income"): Promise<Suggestion | null>;
+  recurring(): Promise<Recurring[]>;
+  createRecurring(input: NewRecurring): Promise<Recurring>;
+  updateRecurring(id: string, edit: { active?: boolean; amount?: number }): Promise<Recurring>;
+  deleteRecurring(id: string): Promise<boolean>;
+  /** Registra los cobros recurrentes vencidos; devuelve cuantos movimientos creo. */
+  syncRecurring(): Promise<number>;
+  /** Instante (ISO) del ultimo movimiento apuntado a mano, o null si no hay ninguno. */
+  lastManualEntryAt(): Promise<string | null>;
   searchTransactions(q: string, limit?: number): Promise<Tx[]>;
   editTransaction(id: string, edit: TxEdit): Promise<Tx>;
   warranties(): Promise<Warranty[]>;
@@ -203,6 +236,47 @@ export class LedgerApi implements LedgerClient {
     const res = await this.request(`/suggest?${new URLSearchParams({ note, type }).toString()}`);
     if (res.status === 404) return null;
     return this.json<Suggestion>(res);
+  }
+
+  async recurring(): Promise<Recurring[]> {
+    return this.json<Recurring[]>(await this.request("/recurring"));
+  }
+
+  async createRecurring(input: NewRecurring): Promise<Recurring> {
+    return this.json<Recurring>(
+      await this.request("/recurring", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    );
+  }
+
+  async updateRecurring(id: string, edit: { active?: boolean; amount?: number }): Promise<Recurring> {
+    return this.json<Recurring>(
+      await this.request(`/recurring/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(edit),
+      }),
+    );
+  }
+
+  async deleteRecurring(id: string): Promise<boolean> {
+    const res = await this.request(`/recurring/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+    return true;
+  }
+
+  async syncRecurring(): Promise<number> {
+    const body = await this.json<{ created: number }>(await this.request("/recurring/sync", { method: "POST" }));
+    return body.created;
+  }
+
+  async lastManualEntryAt(): Promise<string | null> {
+    const body = await this.json<{ lastManualAt: string | null }>(await this.request("/activity"));
+    return body.lastManualAt;
   }
 
   async searchTransactions(q: string, limit = 8): Promise<Tx[]> {

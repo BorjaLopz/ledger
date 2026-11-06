@@ -3,7 +3,7 @@ import { InputFile } from "grammy";
 import { LedgerApi } from "./api.js";
 import { summaryChart } from "./charts.js";
 import { COMMANDS } from "./commands.js";
-import { startReports, startWarrantyNotices } from "./scheduler.js";
+import { startInactivityReminder, startRecurringSync, startReports, startWarrantyNotices } from "./scheduler.js";
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -63,9 +63,21 @@ const stopWarranties = startWarrantyNotices({
   },
 });
 
+const daily = {
+  api,
+  timeZone,
+  send: async (text: string) => {
+    await bot.api.sendMessage(allowedId, text);
+  },
+};
+const stopSync = startRecurringSync(daily); // 06:00 registra los recurrentes vencidos
+const stopInactivity = startInactivityReminder(daily); // 19:00, a los 7/14/21... dias sin apuntar nada
+
 const stop = () => {
   stopReports();
   stopWarranties();
+  stopSync();
+  stopInactivity();
   void bot.stop().finally(() => process.exit(0));
 };
 process.once("SIGINT", stop);

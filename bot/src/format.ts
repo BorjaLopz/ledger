@@ -19,7 +19,52 @@ export function periodLabel(period: string): string {
   return range ? `${shortDate(range[1]!)} – ${shortDate(range[2]!)}` : period;
 }
 
-export function formatSummary(s: Summary, title: string): string {
+/** "2026-01" -> "2025-12" */
+export function prevMonth(month: string): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, "0")}`;
+}
+
+const signedMoney = (n: number): string => `${n > 0 ? "+" : ""}${money(n)}`;
+const signedPct = (cur: number, prev: number): string | null =>
+  prev === 0 ? null : `${cur >= prev ? "+" : ""}${Math.round(((cur - prev) / prev) * 100)} %`;
+
+function versus(label: string, cur: number, prev: number): string | null {
+  if (cur === 0 && prev === 0) return null;
+  const pct = signedPct(cur, prev);
+  return `• ${label}: ${money(cur)} (${[pct, signedMoney(cur - prev)].filter(Boolean).join(", ")})`;
+}
+
+/** Bloque "frente al periodo anterior" (null si el anterior no tiene datos). */
+export function formatComparison(cur: Summary, prev: Summary): string | null {
+  if (prev.income === 0 && prev.expense === 0) return null;
+  const lines = [`↔️ Frente a ${periodLabel(prev.period)}:`];
+  const exp = versus("Gastos", cur.expense, prev.expense);
+  const inc = versus("Ingresos", cur.income, prev.income);
+  if (exp) lines.push(exp);
+  if (inc) lines.push(inc);
+
+  const before = new Map(prev.expenseByCategory.map((c) => [c.category, c.total]));
+  const names = new Set([...before.keys(), ...cur.expenseByCategory.map((c) => c.category)]);
+  const now = new Map(cur.expenseByCategory.map((c) => [c.category, c.total]));
+  const moves = [...names]
+    .map((name) => ({ name, now: now.get(name) ?? 0, was: before.get(name) ?? 0 }))
+    .map((m) => ({ ...m, delta: m.now - m.was }))
+    .filter((m) => Math.abs(m.delta) >= 1)
+    .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+    .slice(0, 3);
+  if (moves.length > 0) {
+    lines.push("Lo que más ha cambiado:");
+    for (const m of moves) {
+      const pct = signedPct(m.now, m.was);
+      lines.push(`• ${m.name}: ${signedMoney(m.delta)}${pct ? ` (${pct})` : " (nueva)"}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+export function formatSummary(s: Summary, title: string, prev?: Summary): string {
   const lines = [
     `${title} · ${periodLabel(s.period)}`,
     `Ingresos: ${money(s.income)}`,
@@ -30,5 +75,7 @@ export function formatSummary(s: Summary, title: string): string {
     lines.push("", "Gastos por categoría:");
     for (const c of s.expenseByCategory) lines.push(`• ${c.category}: ${money(c.total)}`);
   }
+  const comparison = prev ? formatComparison(s, prev) : null;
+  if (comparison) lines.push("", comparison);
   return lines.join("\n");
 }

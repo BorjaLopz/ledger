@@ -1,12 +1,14 @@
 import type { LedgerClient, Summary, SummaryRange, Warranty } from "./api.js";
 import { longDate } from "./dates.js";
-import { dateInZone, formatSummary } from "./format.js";
+import { dateInZone, formatSummary, prevMonth } from "./format.js";
 
 export interface DueReport {
   /** Identifica el informe para no enviarlo dos veces. */
   key: string;
   title: string;
   range: SummaryRange;
+  /** Periodo anterior con el que comparar. */
+  compare: SummaryRange;
 }
 
 function localParts(nowMs: number, timeZone: string) {
@@ -47,14 +49,15 @@ export function reportsDue(nowMs: number, timeZone: string): DueReport[] {
       key: `w:${p.date}`,
       title: "📅 Resumen semanal",
       range: { from: dateInZone(6, timeZone, nowMs), to: p.date },
+      compare: { from: dateInZone(13, timeZone, nowMs), to: dateInZone(7, timeZone, nowMs) },
     });
   }
 
   if (p.day === 1 && p.hour === 9) {
     const prevYear = p.month === 1 ? p.year - 1 : p.year;
-    const prevMonth = p.month === 1 ? 12 : p.month - 1;
-    const label = `${prevYear}-${String(prevMonth).padStart(2, "0")}`;
-    due.push({ key: `m:${label}`, title: "🗓 Resumen mensual", range: { month: label } });
+    const prevMonthNum = p.month === 1 ? 12 : p.month - 1;
+    const label = `${prevYear}-${String(prevMonthNum).padStart(2, "0")}`;
+    due.push({ key: `m:${label}`, title: "🗓 Resumen mensual", range: { month: label }, compare: { month: prevMonth(label) } });
   }
 
   return due;
@@ -82,7 +85,8 @@ export function startReports(opts: ReportOptions): () => void {
       sent.add(report.key);
       try {
         const summary = await opts.api.summary(report.range);
-        await opts.send(formatSummary(summary, report.title));
+        const before = await opts.api.summary(report.compare).catch(() => undefined);
+        await opts.send(formatSummary(summary, report.title, before));
         // El grafico es un extra: si falla no se reintenta (duplicaria el texto).
         if (opts.chart && opts.sendImage) {
           try {
@@ -116,33 +120,79 @@ export function warrantyNotice(list: Warranty[]): string | null {
   return `🛡 Garantías a punto de caducar:\n${lines.join("\n")}\n\nRevisa /garantias por si te interesa reclamar o ampliar algo.`;
 }
 
-export interface WarrantyNoticeOptions {
-  api: LedgerClient;
+export interface DailyOptions {
   send: (text: string) => Promise<void>;
   timeZone: string;
   intervalMs?: number;
   now?: () => number;
 }
 
-/** Cada minuto comprueba si son las 10:xx (hora local) y, una vez al dia, avisa de garantias a punto de caducar. */
-export function startWarrantyNotices(opts: WarrantyNoticeOptions): () => void {
+/** Ejecuta `task` una vez al dia durante la hora `hour` (hora local). Si falla, reintenta el minuto siguiente. */
+function startDaily(hour: number, name: string, opts: DailyOptions, task: (nowMs: number) => Promise<void>): () => void {
   const done = new Set<string>();
   const now = opts.now ?? Date.now;
 
   const tick = async (): Promise<void> => {
-    const p = localParts(now(), opts.timeZone);
-    if (p.hour !== 10 || done.has(p.date)) return;
+    const t = now();
+    const p = localParts(t, opts.timeZone);
+    if (p.hour !== hour || done.has(p.date)) return;
     done.add(p.date);
     try {
-      const text = warrantyNotice(await opts.api.warranties());
-      if (text) await opts.send(text);
+      await task(t);
     } catch (err) {
-      done.delete(p.date); // reintenta en el siguiente minuto mientras dure la ventana
-      console.error("No se pudo enviar el aviso de garantias:", err instanceof Error ? err.message : err);
+      done.delete(p.date);
+      console.error(`No se pudo ejecutar ${name}:`, err instanceof Error ? err.message : err);
     }
   };
 
   const timer = setInterval(() => void tick(), opts.intervalMs ?? 60_000);
   timer.unref();
   return () => clearInterval(timer);
+}
+
+export interface WarrantyNoticeOptions extends DailyOptions {
+  api: LedgerClient;
+}
+
+/** 10:xx: avisa de garantias que caducan en 30, 7 o 1 dias, o hoy. */
+export function startWarrantyNotices(opts: WarrantyNoticeOptions): () => void {
+  return startDaily(10, "el aviso de garantias", opts, async () => {
+    const text = warrantyNotice(await opts.api.warranties());
+    if (text) await opts.send(text);
+  });
+}
+
+/** 06:xx: registra los pagos recurrentes vencidos (asi no hace falta abrir la web) y avisa si hubo alguno. */
+export function startRecurringSync(opts: WarrantyNoticeOptions): () => void {
+  return startDaily(6, "la sincronizacion de recurrentes", opts, async () => {
+    const created = await opts.api.syncRecurring();
+    if (created > 0) {
+      await opts.send(`🔁 Se ${created === 1 ? "ha registrado 1 pago recurrente" : `han registrado ${created} pagos recurrentes`}. Míralo en /ultimo o /buscar.`);
+    }
+  });
+}
+
+/** Dias completos (en timeZone) entre el instante `iso` y `nowMs`. */
+export function daysSince(iso: string, nowMs: number, timeZone: string): number {
+  const day = (ms: number): number => {
+    const [y, m, d] = dateInZone(0, timeZone, ms).split("-").map(Number) as [number, number, number];
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((day(nowMs) - day(Date.parse(iso))) / 86_400_000);
+}
+
+/** Texto del recordatorio: solo a los 7, 14, 21... dias sin apuntar nada (null el resto de dias). */
+export function inactivityNotice(days: number): string | null {
+  if (days < 7 || days % 7 !== 0) return null;
+  return `📝 Llevas ${days} días sin apuntar nada. ¿Se te ha pasado algún gasto, quizá del finde? Mándame algo como «12,50 café».`;
+}
+
+/** 19:xx: recuerda apuntar gastos si llevas 7, 14, 21... dias sin hacerlo (los recurrentes no cuentan). */
+export function startInactivityReminder(opts: WarrantyNoticeOptions): () => void {
+  return startDaily(19, "el recordatorio de inactividad", opts, async (nowMs) => {
+    const last = await opts.api.lastManualEntryAt();
+    if (!last) return;
+    const text = inactivityNotice(daysSince(last, nowMs, opts.timeZone));
+    if (text) await opts.send(text);
+  });
 }
