@@ -1,5 +1,7 @@
 import { createBot } from "./bot.js";
+import { InputFile } from "grammy";
 import { LedgerApi } from "./api.js";
+import { summaryChart } from "./charts.js";
 import { COMMANDS } from "./commands.js";
 import { startReports } from "./scheduler.js";
 
@@ -45,6 +47,10 @@ const stopReports = startReports({
   timeZone,
   send: async (text) => {
     await bot.api.sendMessage(allowedId, text);
+  },
+  chart: (summary, title) => summaryChart(api, summary, title),
+  sendImage: async (png) => {
+    await bot.api.sendPhoto(allowedId, new InputFile(png, "informe.png"));
   },
 });
 

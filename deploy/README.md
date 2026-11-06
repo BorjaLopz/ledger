@@ -67,3 +67,11 @@ Seguridad: el bot solo responde a tu ID de Telegram y en chat privado; la API de
 - `/categorias`: lista agrupada con uso; tocar una permite renombrar, cambiar icono o eliminar. Si tiene movimientos/recurrentes, pregunta a qué categoría pasarlos.
 - `/nuevacategoria`: tipo → nombre → icono; el color se elige solo (el menos usado).
 - No hay variables nuevas: `docker compose --env-file .env up -d --build`.
+
+### Gráficos y exportación (v1.3)
+
+- `/grafico [YYYY-MM|YYYY]`: donut de gastos por categoría (usa los colores de tus categorías).
+- `/balance [meses]`: barras de ingresos y gastos por mes (12 por defecto, 2–36).
+- `/exportar [YYYY-MM|YYYY]`: CSV (`;` y decimales con coma, UTF-8 con BOM) como archivo del chat.
+- Los informes semanal y mensual automáticos adjuntan ahora el donut.
+- Los PNG se dibujan en el propio bot (SVG → `@resvg/resvg-js`); la imagen Docker instala `ttf-dejavu`.

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import type { UserFromGetMe } from "grammy/types";
-import { ApiError, type Category, type CategoryInput, type CategoryUsage, type LedgerClient, type NewTx, type Suggestion, type Summary, type SummaryRange, type Tx } from "./api.js";
+import { ApiError, type Category, type ExportScope, type MonthTotal, type CategoryInput, type CategoryUsage, type LedgerClient, type NewTx, type Suggestion, type Summary, type SummaryRange, type Tx } from "./api.js";
 import { COMMANDS, createBot, dateInZone } from "./bot.js";
 import { pickColor } from "./categories.js";
 
@@ -26,6 +26,18 @@ class FakeApi implements LedgerClient {
   catCalls: string[] = [];
   async categories() {
     return this.cats;
+  }
+  monthlyData: MonthTotal[] = [
+    { month: "2026-10", income: 2000, expense: 800 },
+    { month: "2026-11", income: 0, expense: 300 },
+  ];
+  exportCalls: ExportScope[] = [];
+  async monthly(_months: number) {
+    return this.monthlyData;
+  }
+  async exportCsv(scope?: ExportScope) {
+    this.exportCalls.push(scope);
+    return new TextEncoder().encode("fecha;tipo\n").buffer as ArrayBuffer;
   }
   async categoryUsage(): Promise<CategoryUsage[]> {
     return this.cats.map((c) => ({ ...c, transactions: this.usage[c.id]?.[0] ?? 0, recurring: this.usage[c.id]?.[1] ?? 0 }));
@@ -461,5 +473,55 @@ describe("gestion de categorias", () => {
   it("pickColor elige el menos usado", () => {
     assert.equal(pickColor([]), "#f97316");
     assert.equal(pickColor([{ color: "#f97316" }, { color: "#f97316" }, { color: "#eab308" }]), "#84cc16");
+  });
+});
+
+describe("graficos y exportacion", () => {
+  let h: ReturnType<typeof setup>;
+  beforeEach(() => {
+    h = setup();
+  });
+  const PNG = [0x89, 0x50, 0x4e, 0x47];
+
+  it("/grafico envia un PNG real con el resumen como pie", async () => {
+    await h.text("/grafico");
+    const c = h.last("sendPhoto")!;
+    assert.match(c.payload.caption, /Gastos: 300,50\s€/);
+    assert.ok(c.payload.photo);
+  });
+
+  it("/grafico con año y argumento invalido", async () => {
+    await h.text("/grafico 2026");
+    assert.deepEqual(h.api.summaryCalls.at(-1), { from: "2026-01-01", to: "2026-12-31" });
+    await h.text("/grafico mañana");
+    assert.match(h.last("sendMessage")!.payload.text, /Uso: \/grafico/);
+  });
+
+  it("/grafico sin gastos avisa en vez de enviar imagen vacia", async () => {
+    h.api.summary = async () => ({ period: "2026-11", income: 0, expense: 0, balance: 0, expenseByCategory: [] });
+    await h.text("/grafico");
+    assert.equal(h.last("sendPhoto"), undefined);
+    assert.match(h.last("sendMessage")!.payload.text, /No hay gastos/);
+  });
+
+  it("/balance envia imagen y valida los meses", async () => {
+    await h.text("/balance 6");
+    assert.ok(h.last("sendPhoto"));
+    await h.text("/balance 99");
+    assert.match(h.last("sendMessage")!.payload.text, /Uso: \/balance/);
+  });
+
+  it("/balance sin datos avisa", async () => {
+    h.api.monthlyData = [{ month: "2026-11", income: 0, expense: 0 }];
+    await h.text("/balance");
+    assert.match(h.last("sendMessage")!.payload.text, /Todavía no hay movimientos/);
+  });
+
+  it("/exportar manda el CSV como documento", async () => {
+    await h.text("/exportar 2026-10");
+    assert.deepEqual(h.api.exportCalls, [{ month: "2026-10" }]);
+    assert.ok(h.last("sendDocument"));
+    await h.text("/exportar");
+    assert.deepEqual(h.api.exportCalls.at(-1), undefined);
   });
 });

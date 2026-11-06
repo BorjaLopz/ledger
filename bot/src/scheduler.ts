@@ -1,4 +1,4 @@
-import type { LedgerClient, SummaryRange } from "./api.js";
+import type { LedgerClient, Summary, SummaryRange } from "./api.js";
 import { dateInZone, formatSummary } from "./format.js";
 
 export interface DueReport {
@@ -62,6 +62,9 @@ export function reportsDue(nowMs: number, timeZone: string): DueReport[] {
 export interface ReportOptions {
   api: LedgerClient;
   send: (text: string) => Promise<void>;
+  /** Opcional: dibuja el grafico del informe (null si no hay gastos) y lo envia. */
+  chart?: (summary: Summary, title: string) => Promise<Buffer | null>;
+  sendImage?: (png: Buffer) => Promise<void>;
   timeZone: string;
   intervalMs?: number;
   now?: () => number;
@@ -79,6 +82,15 @@ export function startReports(opts: ReportOptions): () => void {
       try {
         const summary = await opts.api.summary(report.range);
         await opts.send(formatSummary(summary, report.title));
+        // El grafico es un extra: si falla no se reintenta (duplicaria el texto).
+        if (opts.chart && opts.sendImage) {
+          try {
+            const png = await opts.chart(summary, report.title);
+            if (png) await opts.sendImage(png);
+          } catch (err) {
+            console.error(`No se pudo enviar el grafico de ${report.key}:`, err instanceof Error ? err.message : err);
+          }
+        }
       } catch (err) {
         sent.delete(report.key); // reintenta en el siguiente minuto mientras dure la ventana
         console.error(`No se pudo enviar el informe ${report.key}:`, err instanceof Error ? err.message : err);

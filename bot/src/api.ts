@@ -45,6 +45,16 @@ export interface CategoryInput {
   color?: string;
 }
 
+export interface MonthTotal {
+  /** "2026-11" */
+  month: string;
+  income: number;
+  expense: number;
+}
+
+/** Que exportar a CSV; sin valor = todo. */
+export type ExportScope = { month: string } | { year: string } | undefined;
+
 export interface NewTx {
   type: "expense" | "income";
   amount: number;
@@ -71,6 +81,8 @@ export interface LedgerClient {
   deleteTransaction(id: string): Promise<boolean>;
   summary(range?: SummaryRange): Promise<Summary>;
   suggestCategory(note: string, type: "expense" | "income"): Promise<Suggestion | null>;
+  monthly(months: number): Promise<MonthTotal[]>;
+  exportCsv(scope?: ExportScope): Promise<ArrayBuffer>;
   categoryUsage(): Promise<CategoryUsage[]>;
   createCategory(input: Required<CategoryInput>): Promise<Category>;
   updateCategory(id: string, input: CategoryInput): Promise<Category>;
@@ -157,6 +169,20 @@ export class LedgerApi implements LedgerClient {
     const res = await this.request(`/suggest?${new URLSearchParams({ note, type }).toString()}`);
     if (res.status === 404) return null;
     return this.json<Suggestion>(res);
+  }
+
+  async monthly(months: number): Promise<MonthTotal[]> {
+    return this.json<MonthTotal[]>(await this.request(`/monthly?months=${months}`));
+  }
+
+  async exportCsv(scope?: ExportScope): Promise<ArrayBuffer> {
+    const params = new URLSearchParams();
+    if (scope && "month" in scope) params.set("month", scope.month);
+    if (scope && "year" in scope) params.set("year", scope.year);
+    const query = params.size > 0 ? `?${params.toString()}` : "";
+    const res = await this.request(`/export${query}`);
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+    return res.arrayBuffer();
   }
 
   async categoryUsage(): Promise<CategoryUsage[]> {

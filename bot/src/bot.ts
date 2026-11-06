@@ -1,10 +1,12 @@
 import { randomBytes } from "node:crypto";
-import { Bot, InlineKeyboard, type Context } from "grammy";
+import { Bot, InlineKeyboard, InputFile, type Context } from "grammy";
 import type { UserFromGetMe } from "grammy/types";
 import { ApiError, type Category, type LedgerClient, type Tx } from "./api.js";
 import { dateInZone, formatSummary, money, shortDate } from "./format.js";
 import { COMMANDS } from "./commands.js";
 import { registerCategories } from "./categories.js";
+import { monthlyChart, summaryChart } from "./charts.js";
+import { parsePeriod } from "./period.js";
 import { parseEntry, type ParsedEntry } from "./parser.js";
 
 export { dateInZone, money, COMMANDS };
@@ -85,17 +87,62 @@ export function createBot(deps: BotDeps): Bot {
   bot.command(["start", "ayuda", "help"], (ctx) => ctx.reply(HELP));
 
   bot.command("resumen", async (ctx) => {
-    const arg = ctx.match.trim();
-    if (!arg) {
-      await ctx.reply(formatSummary(await deps.api.summary(), "📊 Resumen"));
-    } else if (/^\d{4}-(0[1-9]|1[0-2])$/.test(arg)) {
-      await ctx.reply(formatSummary(await deps.api.summary({ month: arg }), "📊 Resumen"));
-    } else if (/^\d{4}$/.test(arg)) {
-      const s = await deps.api.summary({ from: `${arg}-01-01`, to: `${arg}-12-31` });
-      await ctx.reply(formatSummary(s, `📊 Año ${arg}`));
-    } else {
+    const p = parsePeriod(ctx.match);
+    if (!p) {
       await ctx.reply("Uso: /resumen · /resumen 2026-10 · /resumen 2026");
+    } else if (p.kind === "year") {
+      const s = await deps.api.summary({ from: `${p.year}-01-01`, to: `${p.year}-12-31` });
+      await ctx.reply(formatSummary(s, `📊 Año ${p.year}`));
+    } else {
+      await ctx.reply(formatSummary(await deps.api.summary(p.kind === "month" ? { month: p.month } : undefined), "📊 Resumen"));
     }
+  });
+
+  bot.command("grafico", async (ctx) => {
+    const p = parsePeriod(ctx.match);
+    if (!p) {
+      await ctx.reply("Uso: /grafico · /grafico 2026-10 · /grafico 2026");
+      return;
+    }
+    const range =
+      p.kind === "year" ? { from: `${p.year}-01-01`, to: `${p.year}-12-31` } : p.kind === "month" ? { month: p.month } : undefined;
+    const title = p.kind === "year" ? `Año ${p.year}` : "Resumen";
+    const s = await deps.api.summary(range);
+    const png = await summaryChart(deps.api, s, title);
+    if (!png) {
+      await ctx.reply("No hay gastos en ese periodo, no hay nada que dibujar.");
+      return;
+    }
+    await ctx.replyWithPhoto(new InputFile(png, "grafico.png"), { caption: formatSummary(s, "📊 " + title) });
+  });
+
+  bot.command("balance", async (ctx) => {
+    const arg = ctx.match.trim();
+    const months = arg ? Number(arg) : 12;
+    if (!Number.isInteger(months) || months < 2 || months > 36) {
+      await ctx.reply("Uso: /balance (12 meses) · /balance 6 (entre 2 y 36 meses)");
+      return;
+    }
+    const png = await monthlyChart(deps.api, months, "Balance mensual");
+    if (!png) {
+      await ctx.reply("Todavía no hay movimientos en ese periodo.");
+      return;
+    }
+    await ctx.replyWithPhoto(new InputFile(png, "balance.png"));
+  });
+
+  bot.command("exportar", async (ctx) => {
+    const p = parsePeriod(ctx.match);
+    if (!p) {
+      await ctx.reply("Uso: /exportar (todo) · /exportar 2026-10 · /exportar 2026");
+      return;
+    }
+    const arg = ctx.match.trim();
+    const scope = p.kind === "month" ? { month: p.month } : p.kind === "year" ? { year: p.year } : undefined;
+    const bytes = await deps.api.exportCsv(scope);
+    await ctx.replyWithDocument(new InputFile(new Uint8Array(bytes), `ledger-${arg || "todo"}.csv`), {
+      caption: "Separador «;» y decimales con coma: se abre directo en Excel.",
+    });
   });
 
   bot.command("ultimo", async (ctx) => {

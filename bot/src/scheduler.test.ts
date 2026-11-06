@@ -103,3 +103,30 @@ test("fuera de ventana no envia nada", async () => {
   stop();
   assert.equal(sent.length, 0);
 });
+
+test("el informe automatico adjunta el grafico y, si este falla, no repite el texto", async () => {
+  for (const failChart of [false, true]) {
+    const texts: string[] = [];
+    const images: Buffer[] = [];
+    const stop = startReports({
+      api: apiWith([]),
+      timeZone: TZ,
+      intervalMs: 5,
+      now: () => at(2026, 11, 8, 19, 5),
+      send: async (t) => {
+        texts.push(t);
+      },
+      chart: async () => {
+        if (failChart) throw new Error("sin fuente");
+        return Buffer.from([1]);
+      },
+      sendImage: async (png) => {
+        images.push(png);
+      },
+    });
+    await wait(60);
+    stop();
+    assert.equal(texts.length, 1);
+    assert.equal(images.length, failChart ? 0 : 1);
+  }
+});

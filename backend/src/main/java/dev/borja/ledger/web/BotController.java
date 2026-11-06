@@ -24,6 +24,8 @@ import java.util.Map;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.transaction.annotation.Transactional;
@@ -362,5 +364,100 @@ public class BotController {
         }
         categories.delete(c);
         return Map.of("deleted", c.id, "moved", txs.size() + recs.size());
+    }
+
+    // ---- Graficos y exportacion ----
+
+    public record MonthTotal(String month, BigDecimal income, BigDecimal expense) {}
+
+    /** Ingresos y gastos por mes de los ultimos N meses (1-36), del mas antiguo al actual; incluye meses vacios. */
+    @GetMapping("/monthly")
+    public List<MonthTotal> monthly(@AuthenticationPrincipal Jwt jwt, @RequestParam(defaultValue = "12") int months) {
+        if (months < 1 || months > 36) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "months debe estar entre 1 y 36");
+        }
+        YearMonth last = YearMonth.now(zone);
+        YearMonth first = last.minusMonths(months - 1L);
+        Map<YearMonth, BigDecimal[]> acc = new LinkedHashMap<>();
+        for (int i = 0; i < months; i++) {
+            acc.put(first.plusMonths(i), new BigDecimal[] {BigDecimal.ZERO, BigDecimal.ZERO});
+        }
+        for (Transaction t : transactions.findByUidOrderByDateDesc(jwt.getSubject())) {
+            BigDecimal[] slot = acc.get(YearMonth.from(t.date));
+            if (slot == null) {
+                continue;
+            }
+            int i = "income".equals(t.type) ? 0 : 1;
+            slot[i] = slot[i].add(t.amount);
+        }
+        return acc.entrySet().stream()
+                .map(e -> new MonthTotal(e.getKey().toString(), e.getValue()[0], e.getValue()[1]))
+                .toList();
+    }
+
+    /** CSV (separador ";", decimales con coma, UTF-8 con BOM para Excel) de un mes, un ano o un rango. */
+    @GetMapping("/export")
+    public ResponseEntity<String> export(@AuthenticationPrincipal Jwt jwt,
+                                         @RequestParam(required = false) String month,
+                                         @RequestParam(required = false) String year,
+                                         @RequestParam(required = false) String from,
+                                         @RequestParam(required = false) String to) {
+        LocalDate start = null;
+        LocalDate end = null;
+        String label = "todo";
+        try {
+            if (from != null && to != null) {
+                start = LocalDate.parse(from);
+                end = LocalDate.parse(to);
+                label = start + "_" + end;
+            } else if (month != null && !month.isBlank()) {
+                YearMonth ym = YearMonth.parse(month);
+                start = ym.atDay(1);
+                end = ym.atEndOfMonth();
+                label = ym.toString();
+            } else if (year != null && !year.isBlank()) {
+                int y = Integer.parseInt(year);
+                start = LocalDate.of(y, 1, 1);
+                end = LocalDate.of(y, 12, 31);
+                label = year;
+            }
+        } catch (DateTimeParseException | NumberFormatException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Usa month=YYYY-MM, year=YYYY o from/to");
+        }
+        if (start != null && start.isAfter(end)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "from debe ser anterior o igual a to");
+        }
+        String uid = jwt.getSubject();
+        Map<String, String> names = new HashMap<>();
+        for (Category c : categories.findByUid(uid)) {
+            names.put(c.id, c.name);
+        }
+        StringBuilder csv = new StringBuilder("\uFEFFfecha;tipo;categoria;importe;nota;ticket\n");
+        List<Transaction> all = transactions.findByUidOrderByDateDesc(uid);
+        for (int i = all.size() - 1; i >= 0; i--) { // cronologico
+            Transaction t = all.get(i);
+            if (start != null && (t.date.isBefore(start) || t.date.isAfter(end))) {
+                continue;
+            }
+            csv.append(t.date).append(';')
+                    .append("income".equals(t.type) ? "ingreso" : "gasto").append(';')
+                    .append(csvText(names.getOrDefault(t.categoryId, "Sin categoria"))).append(';')
+                    .append(t.amount.toPlainString().replace('.', ',')).append(';')
+                    .append(csvText(t.note)).append(';')
+                    .append(t.receiptPath != null ? "si" : "no").append('\n');
+        }
+        return ResponseEntity.ok()
+                .contentType(new MediaType("text", "csv", java.nio.charset.StandardCharsets.UTF_8))
+                .header("X-Export-Name", "ledger-" + label + ".csv")
+                .body(csv.toString());
+    }
+
+    /** Escapa para CSV y neutraliza formulas (=, +, -, @) que Excel ejecutaria. */
+    private static String csvText(String raw) {
+        String v = raw == null ? "" : raw.replace("\r", " ").replace("\n", " ");
+        if (!v.isEmpty() && "=+-@\t".indexOf(v.charAt(0)) >= 0) {
+            v = "'" + v;
+        }
+        return "\"" + v.replace("\"", "\"\"") + "\"";
     }
 }

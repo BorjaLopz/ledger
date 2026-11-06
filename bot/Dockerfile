@@ -9,6 +9,8 @@ RUN npm run build
 FROM node:22-alpine
 WORKDIR /app
 ENV NODE_ENV=production
+# Fuente para dibujar los graficos (la imagen alpine no trae ninguna)
+RUN apk add --no-cache ttf-dejavu fontconfig
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 COPY --from=build /app/dist ./dist
