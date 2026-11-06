@@ -34,3 +34,29 @@ En Firebase Console → Authentication → Settings → Authorized domains: aña
 
 ## 5. Backups
 Añade el volumen de tickets a tu cron: `docker run --rm -v ledger_receipts:/d -v ~/backups:/b alpine tar czf /b/receipts-$(date +%F).tgz -C /d .` y copia los backups fuera del NUC de vez en cuando.
+
+## 6. Bot de Telegram para gastos
+Escribes `12,50 café` al bot, eliges la categoría con un botón y queda guardado en el Ledger. Si luego le mandas una foto, la guarda como ticket del último movimiento.
+
+1. **Crea un bot nuevo** en @BotFather (distinto del de avisos), con nombre e icono propios. Guarda el token.
+2. **Rellena en `deploy/.env`** las variables nuevas (ver `.env.example`): `TELEGRAM_BOT_TOKEN`, `ALLOWED_TELEGRAM_ID` (tu ID de Telegram), `BOT_API_KEY` (`openssl rand -hex 32`) y `BOT_UID`:
+   ```bash
+   docker exec postgres psql -U ledger_user -d ledger -t -A -c "SELECT DISTINCT uid FROM categories;"
+   ```
+   Debe salir una sola línea (tu uid). Si salen varias, hay datos de otros usuarios: elige el tuyo.
+3. **Despliega:**
+   ```bash
+   cd ~/ledger && git pull
+   cd deploy && docker compose --env-file .env up -d --build
+   docker logs -f ledger-bot     # "Bot @... escuchando"
+   ```
+4. **Prueba** en Telegram: `/start`, luego `12,50 café`.
+
+Ejemplos de mensajes: `12,50 café` · `café 12,50` · `45€ gasolina ayer` · `+1200 nómina` (ingreso) · `ingreso 1200 nómina`.
+Comandos: `/resumen` (mes actual), `/resumen 2026-10` (un mes), `/resumen 2026` (año completo), `/ultimo`, `/ayuda`.
+
+**Sugerencias:** si ya has guardado antes un movimiento con la misma nota (sin importar mayúsculas ni tildes), el bot pone arriba un botón ⭐ con la categoría que más has usado para ella, a un toque. Usa tu historial de la base de datos, así que funciona desde el primer día con lo migrado de Firestore.
+
+**Informes automáticos** (hora de Madrid): resumen semanal los **domingos a las 20:00** (lunes a domingo) y resumen del mes anterior el **día 1 a las 09:00**. El bot se comprueba cada minuto dentro de esa hora; si estaba apagado en esa franja, ese informe se pierde, y si se reinicia dentro de ella puede repetirse una vez.
+
+Seguridad: el bot solo responde a tu ID de Telegram y en chat privado; la API del bot (`/api/bot/*`) solo acepta la clave `BOT_API_KEY`, y nginx la bloquea desde fuera, así que solo es alcanzable dentro de la red de Docker. Trata `BOT_API_KEY` y el token como contraseñas.

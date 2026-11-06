@@ -40,3 +40,6 @@ app:
     dir: ${RECEIPTS_DIR:/data/receipts}
     signing-secret: ${RECEIPTS_SIGNING_SECRET}
     url-ttl-seconds: 43200
+  bot:
+    api-key: ${BOT_API_KEY:}
+    uid: ${BOT_UID:}

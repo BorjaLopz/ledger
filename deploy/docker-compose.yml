@@ -12,6 +12,9 @@ services:
       FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID}
       RECEIPTS_SIGNING_SECRET: ${RECEIPTS_SIGNING_SECRET}
       APP_TIMEZONE: Europe/Madrid
+      # Bot de Telegram: clave compartida y usuario (uid de Firebase) sobre el que actua
+      BOT_API_KEY: ${BOT_API_KEY:?Falta BOT_API_KEY en deploy/.env}
+      BOT_UID: ${BOT_UID:?Falta BOT_UID en deploy/.env}
     volumes:
       - ledger_receipts:/data/receipts
     networks:
@@ -36,6 +39,22 @@ services:
       - "127.0.0.1:8081:80"
     networks:
       - backend
+
+  ledger-bot:
+    build: ../bot
+    container_name: ledger-bot
+    restart: unless-stopped
+    depends_on:
+      - ledger-api
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:?Falta TELEGRAM_BOT_TOKEN en deploy/.env}
+      ALLOWED_TELEGRAM_ID: ${ALLOWED_TELEGRAM_ID:?Falta ALLOWED_TELEGRAM_ID en deploy/.env}
+      BOT_API_KEY: ${BOT_API_KEY}
+      LEDGER_API_URL: http://ledger-api:8080
+      TZ: Europe/Madrid
+    networks:
+      - backend
+    # sin puertos publicados: el bot solo hace peticiones salientes (long polling)
 
 volumes:
   ledger_receipts:

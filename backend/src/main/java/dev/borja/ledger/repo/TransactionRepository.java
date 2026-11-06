@@ -9,4 +9,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, String
     List<Transaction> findByUidOrderByDateDesc(String uid);
 
     Optional<Transaction> findByIdAndUid(String id, String uid);
+
+    Optional<Transaction> findFirstByUidOrderByCreatedAtDesc(String uid);
 }

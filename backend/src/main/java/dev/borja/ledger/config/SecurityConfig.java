@@ -17,6 +17,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtValidators;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
+import org.springframework.security.oauth2.server.resource.web.authentication.BearerTokenAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 
@@ -32,7 +33,9 @@ public class SecurityConfig {
             "https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com";
 
     @Bean
-    SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+    SecurityFilterChain filterChain(HttpSecurity http,
+                                    @Value("${app.bot.api-key:}") String botApiKey,
+                                    @Value("${app.bot.uid:}") String botUid) throws Exception {
         http
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
@@ -41,7 +44,10 @@ public class SecurityConfig {
                         // La autorizacion se hace con una URL firmada y temporal (ver ReceiptService).
                         .requestMatchers(HttpMethod.GET, "/api/receipts/*/*").permitAll()
                         .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
+                        // El bot de Telegram entra con su propia clave (BotApiKeyFilter), no con Firebase.
+                        .requestMatchers("/api/bot/**").hasRole("BOT")
                         .anyRequest().authenticated())
+                .addFilterBefore(new BotApiKeyFilter(botApiKey, botUid), BearerTokenAuthenticationFilter.class)
                 .oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()))
                 .exceptionHandling(e -> e.authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED)));
         return http.build();
