@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import type { LedgerClient, Summary, SummaryRange } from "./api.js";
-import { reportsDue, startReports } from "./scheduler.js";
+import type { LedgerClient, Summary, SummaryRange, Warranty } from "./api.js";
+import { reportsDue, startReports, startWarrantyNotices, warrantyNotice } from "./scheduler.js";
 
 const TZ = "Europe/Madrid";
 const at = (y: number, m: number, d: number, h: number, min = 0) => Date.UTC(y, m - 1, d, h, min);
@@ -128,5 +128,44 @@ test("el informe automatico adjunta el grafico y, si este falla, no repite el te
     stop();
     assert.equal(texts.length, 1);
     assert.equal(images.length, failChart ? 0 : 1);
+  }
+});
+
+const warranty = (name: string, daysLeft: number): Warranty => ({
+  id: name,
+  name,
+  purchaseDate: "2025-01-01",
+  months: 24,
+  expiresOn: "2026-12-06",
+  daysLeft,
+  note: "",
+  receiptUrl: null,
+});
+
+test("warrantyNotice avisa solo a 30, 7, 1 y 0 dias", () => {
+  assert.equal(warrantyNotice([warranty("A", 100), warranty("B", 29), warranty("C", -1)]), null);
+  const text = warrantyNotice([warranty("TV", 30), warranty("Móvil", 7), warranty("Horno", 1), warranty("Nevera", 0), warranty("X", 5)])!;
+  assert.match(text, /TV: caduca en 30 días/);
+  assert.match(text, /Móvil: caduca en 7 días/);
+  assert.match(text, /Horno: caduca mañana/);
+  assert.match(text, /Nevera: caduca HOY/);
+  assert.ok(!text.includes("• X"));
+});
+
+test("el aviso de garantias sale una vez al dia a las 10:xx", async () => {
+  for (const [hourUtc, expected] of [[9, 1], [12, 0]] as const) {
+    const sent: string[] = [];
+    const stop = startWarrantyNotices({
+      api: { warranties: async () => [warranty("TV", 7)] } as unknown as LedgerClient,
+      timeZone: TZ,
+      intervalMs: 5,
+      now: () => at(2026, 11, 6, hourUtc, 5), // 10:05 CET o 13:05 CET
+      send: async (t) => {
+        sent.push(t);
+      },
+    });
+    await wait(60);
+    stop();
+    assert.equal(sent.length, expected);
   }
 });

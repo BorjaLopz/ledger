@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { beforeEach, describe, it } from "node:test";
 import type { UserFromGetMe } from "grammy/types";
-import { ApiError, type Category, type ExportScope, type MonthTotal, type CategoryInput, type CategoryUsage, type LedgerClient, type NewTx, type Suggestion, type Summary, type SummaryRange, type Tx } from "./api.js";
+import { ApiError, type NewWarranty, type TxEdit, type Warranty, type Category, type ExportScope, type MonthTotal, type CategoryInput, type CategoryUsage, type LedgerClient, type NewTx, type Suggestion, type Summary, type SummaryRange, type Tx } from "./api.js";
 import { COMMANDS, createBot, dateInZone } from "./bot.js";
 import { pickColor } from "./categories.js";
 
@@ -21,11 +21,55 @@ class FakeApi implements LedgerClient {
   /** "expense:café" -> id de categoria */
   suggestions = new Map<string, string>();
   failSuggest = false;
-  cats: Category[] = [...CATS];
+  cats: Category[] = CATS.map((c) => ({ ...c }));
   usage: Record<string, [number, number]> = { "c-ocio": [5, 1] };
   catCalls: string[] = [];
   async categories() {
     return this.cats;
+  }
+  editCalls: { id: string; edit: TxEdit }[] = [];
+  wlist: Warranty[] = [];
+  wCreated: NewWarranty[] = [];
+  wAttached: { id: string; size: number }[] = [];
+  wDeleted: string[] = [];
+  async searchTransactions(q: string) {
+    const n = q.toLowerCase();
+    return this.txs.filter((t) => t.note.toLowerCase().includes(n) || String(t.amount) === q);
+  }
+  async editTransaction(id: string, edit: TxEdit): Promise<Tx> {
+    this.editCalls.push({ id, edit });
+    const t = this.txs.find((x) => x.id === id)!;
+    Object.assign(t, edit);
+    return t;
+  }
+  async warranties() {
+    return this.wlist;
+  }
+  async createWarranty(input: NewWarranty): Promise<Warranty> {
+    this.wCreated.push(input);
+    const w: Warranty = {
+      id: `w${this.wCreated.length}`,
+      name: input.name,
+      purchaseDate: input.purchaseDate ?? "2026-11-06",
+      months: input.months,
+      expiresOn: "2028-11-06",
+      daysLeft: 730,
+      note: "",
+      receiptUrl: null,
+    };
+    this.wlist.push(w);
+    return w;
+  }
+  async attachWarrantyReceipt(id: string, bytes: ArrayBuffer) {
+    this.wAttached.push({ id, size: bytes.byteLength });
+    return this.wlist.find((w) => w.id === id)!;
+  }
+  async deleteWarranty(id: string) {
+    this.wDeleted.push(id);
+    return true;
+  }
+  async downloadReceipt(_url: string) {
+    return new Uint8Array([9, 9]).buffer as ArrayBuffer;
   }
   monthlyData: MonthTotal[] = [
     { month: "2026-10", income: 2000, expense: 800 },
@@ -523,5 +567,172 @@ describe("graficos y exportacion", () => {
     assert.ok(h.last("sendDocument"));
     await h.text("/exportar");
     assert.deepEqual(h.api.exportCalls.at(-1), undefined);
+  });
+});
+
+const W = (over: Partial<Warranty> = {}): Warranty => ({
+  id: "w0",
+  name: "TV Samsung",
+  purchaseDate: "2025-11-06",
+  months: 24,
+  expiresOn: "2027-11-06",
+  daysLeft: 365,
+  note: "",
+  receiptUrl: null,
+  ...over,
+});
+
+describe("garantias", () => {
+  let h: ReturnType<typeof setup>;
+  beforeEach(() => {
+    h = setup();
+  });
+
+  it("/garantias sin datos invita a crear", async () => {
+    await h.text("/garantias");
+    assert.match(h.last("sendMessage")!.payload.text, /No tienes garantías/);
+  });
+
+  it("lista con estado y detalle", async () => {
+    h.api.wlist = [W({ id: "w1", name: "Móvil", daysLeft: -3, expiresOn: "2026-11-03" }), W({ id: "w2", daysLeft: 20 }), W({ id: "w3", name: "Nevera", daysLeft: 400, receiptUrl: "/api/receipts/u/x.jpg?exp=1&sig=a" })];
+    await h.text("/garantias");
+    const m = h.last("sendMessage")!;
+    assert.match(m.payload.text, /❌ Móvil · caducó hace 3 días/);
+    assert.match(m.payload.text, /⚠️ TV Samsung · caduca en 20 días/);
+    assert.match(m.payload.text, /✅ Nevera .* 📎/);
+    await h.press(h.buttons(m)[2]!); // Nevera
+    const d = h.last("editMessageText")!;
+    assert.match(d.payload.text, /Comprado el 06\/11\/2025 · garantía de 2 años/);
+    assert.ok(h.buttons(d).some((b) => b.startsWith("wv:")));
+    await h.press(h.buttons(d).find((b) => b.startsWith("wv:"))!);
+    assert.ok(h.last("sendPhoto"));
+  });
+
+  it("crear: nombre, fecha con botones y duracion", async () => {
+    await h.text("/nuevagarantia");
+    await h.text("Lavadora");
+    const ask = h.buttons(h.last("sendMessage"));
+    await h.press(ask[1]!); // ayer
+    assert.match(h.last("editMessageText")!.payload.text, /¿Cuánto dura la garantía\?/);
+    const durations = h.buttons(h.last("editMessageText"));
+    await h.press(durations[1]!); // 2 años
+    assert.deepEqual(h.api.wCreated, [{ name: "Lavadora", purchaseDate: dateInZone(1, "Europe/Madrid"), months: 24 }]);
+    assert.match(h.last("sendMessage")!.payload.text, /Garantía guardada/);
+  });
+
+  it("crear con fecha escrita y meses a medida, validando", async () => {
+    await h.text("/nuevagarantia");
+    await h.text("Cámara");
+    await h.press(h.buttons(h.last("sendMessage"))[2]!); // otra fecha
+    await h.text("mañana");
+    assert.match(h.last("sendMessage")!.payload.text, /No entiendo esa fecha/);
+    await h.text("15/03/2025");
+    const kb = h.buttons(h.last("sendMessage"));
+    await h.press(kb.find((b) => b.endsWith(":o"))!);
+    await h.text("999");
+    assert.match(h.last("sendMessage")!.payload.text, /entre 1 y 120/);
+    await h.text("18");
+    assert.deepEqual(h.api.wCreated, [{ name: "Cámara", purchaseDate: "2025-03-15", months: 18 }]);
+  });
+
+  it("la foto tras crear va a la garantia; despues vuelve a los movimientos", async () => {
+    await h.text("/nuevagarantia");
+    await h.text("Horno");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!);
+    await h.press(h.buttons(h.last("editMessageText"))[0]!);
+    await h.photo();
+    const ask = h.last("sendMessage")!;
+    assert.match(ask.payload.text, /ticket de la garantía «Horno»/);
+    await h.press(h.buttons(ask)[0]!);
+    assert.deepEqual(h.api.wAttached, [{ id: "w1", size: 3 }]);
+    await h.photo();
+    assert.match(h.last("sendMessage")!.payload.text, /No hay ningún movimiento|ticket de:/);
+  });
+
+  it("eliminar pide confirmacion", async () => {
+    h.api.wlist = [W({ id: "w1" })];
+    await h.text("/garantias");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!);
+    await h.press(h.buttons(h.last("editMessageText")).find((b) => b.startsWith("wd:"))!);
+    assert.equal(h.api.wDeleted.length, 0);
+    await h.press(h.buttons(h.last("editMessageText")).find((b) => b.startsWith("wy:"))!);
+    assert.deepEqual(h.api.wDeleted, ["w1"]);
+  });
+});
+
+describe("buscar y editar movimientos", () => {
+  let h: ReturnType<typeof setup>;
+  beforeEach(() => {
+    h = setup();
+    h.api.txs.push({ id: "t9", type: "expense", amount: 12.5, categoryId: "c-ocio", date: "2026-11-03", note: "café", receiptUrl: null });
+  });
+
+  it("/buscar sin texto o sin resultados", async () => {
+    await h.text("/buscar");
+    assert.match(h.last("sendMessage")!.payload.text, /Uso: \/buscar/);
+    await h.text("/buscar pizza");
+    assert.match(h.last("sendMessage")!.payload.text, /No he encontrado nada con «pizza»/);
+  });
+
+  it("busca y abre el detalle con las acciones", async () => {
+    await h.text("/buscar café");
+    const list = h.last("sendMessage")!;
+    assert.match(list.payload.text, /1 resultado/);
+    await h.press(h.buttons(list)[0]!);
+    const d = h.last("editMessageText")!;
+    assert.match(d.payload.text, /Gasto: 12,50\s€ · Ocio · café · 03\/11/);
+    const kinds = h.buttons(d).map((b) => b.split(":")[0]);
+    assert.deepEqual(kinds, ["ma", "mc", "md", "mn", "mx", "mb"]);
+  });
+
+  it("edita el importe (y valida)", async () => {
+    await h.text("/buscar café");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!);
+    await h.press(h.buttons(h.last("editMessageText"))[0]!);
+    await h.text("abc");
+    assert.match(h.last("sendMessage")!.payload.text, /No entiendo ese importe/);
+    await h.text("20,5");
+    assert.deepEqual(h.api.editCalls, [{ id: "t9", edit: { amount: 20.5 } }]);
+    assert.match(h.last("sendMessage")!.payload.text, /Actualizado[\s\S]*20,50\s€/);
+  });
+
+  it("edita fecha, nota y categoria", async () => {
+    await h.text("/buscar café");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!);
+    const kb = h.buttons(h.last("editMessageText"));
+    await h.press(kb.find((b) => b.startsWith("md:"))!);
+    await h.text("ayer");
+    await h.press(kb.find((b) => b.startsWith("mn:"))!);
+    await h.text("-");
+    await h.press(kb.find((b) => b.startsWith("mc:"))!);
+    const cats = h.buttons(h.last("editMessageText")).filter((b) => b.startsWith("mk:"));
+    assert.equal(cats.length, 2); // solo categorias de gasto
+    await h.press(cats[0]!); // Supermercado
+    assert.deepEqual(h.api.editCalls.map((c) => c.edit), [
+      { date: dateInZone(1, "Europe/Madrid") },
+      { note: "" },
+      { categoryId: "c-super" },
+    ]);
+  });
+
+  it("borra con confirmacion y /ultimo ofrece editar", async () => {
+    await h.text("/ultimo");
+    const last = h.last("sendMessage")!;
+    assert.deepEqual(h.buttons(last).map((b) => b.split(":")[0]), ["me", "u"]);
+    await h.press(h.buttons(last)[0]!);
+    await h.press(h.buttons(h.last("editMessageText")).find((b) => b.startsWith("mx:"))!);
+    assert.equal(h.api.deleted.length, 0);
+    await h.press(h.buttons(h.last("editMessageText")).find((b) => b.startsWith("my:"))!);
+    assert.deepEqual(h.api.deleted, ["t9"]);
+  });
+
+  it("un comando cancela la edicion pendiente", async () => {
+    await h.text("/buscar café");
+    await h.press(h.buttons(h.last("sendMessage"))[0]!);
+    await h.press(h.buttons(h.last("editMessageText"))[0]!);
+    await h.text("/ayuda");
+    await h.text("7 pan");
+    assert.equal(h.api.editCalls.length, 0);
+    assert.match(h.last("sendMessage")!.payload.text, /Elige categoría/);
   });
 });

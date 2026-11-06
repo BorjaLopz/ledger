@@ -55,6 +55,32 @@ export interface MonthTotal {
 /** Que exportar a CSV; sin valor = todo. */
 export type ExportScope = { month: string } | { year: string } | undefined;
 
+export interface Warranty {
+  id: string;
+  name: string;
+  purchaseDate: string;
+  months: number;
+  expiresOn: string;
+  /** Dias hasta que caduca; negativo si ya caducó. */
+  daysLeft: number;
+  note: string;
+  receiptUrl: string | null;
+}
+
+export interface NewWarranty {
+  name: string;
+  purchaseDate?: string;
+  months: number;
+  note?: string;
+}
+
+export interface TxEdit {
+  amount?: number;
+  categoryId?: string;
+  date?: string;
+  note?: string;
+}
+
 export interface NewTx {
   type: "expense" | "income";
   amount: number;
@@ -81,6 +107,14 @@ export interface LedgerClient {
   deleteTransaction(id: string): Promise<boolean>;
   summary(range?: SummaryRange): Promise<Summary>;
   suggestCategory(note: string, type: "expense" | "income"): Promise<Suggestion | null>;
+  searchTransactions(q: string, limit?: number): Promise<Tx[]>;
+  editTransaction(id: string, edit: TxEdit): Promise<Tx>;
+  warranties(): Promise<Warranty[]>;
+  createWarranty(input: NewWarranty): Promise<Warranty>;
+  attachWarrantyReceipt(id: string, bytes: ArrayBuffer, filename: string, contentType: string): Promise<Warranty>;
+  deleteWarranty(id: string): Promise<boolean>;
+  /** Descarga un ticket a partir de la URL firmada que devuelve la API (/api/receipts/...). */
+  downloadReceipt(url: string): Promise<ArrayBuffer>;
   monthly(months: number): Promise<MonthTotal[]>;
   exportCsv(scope?: ExportScope): Promise<ArrayBuffer>;
   categoryUsage(): Promise<CategoryUsage[]>;
@@ -169,6 +203,56 @@ export class LedgerApi implements LedgerClient {
     const res = await this.request(`/suggest?${new URLSearchParams({ note, type }).toString()}`);
     if (res.status === 404) return null;
     return this.json<Suggestion>(res);
+  }
+
+  async searchTransactions(q: string, limit = 8): Promise<Tx[]> {
+    return this.json<Tx[]>(await this.request(`/transactions/search?${new URLSearchParams({ q, limit: String(limit) })}`));
+  }
+
+  async editTransaction(id: string, edit: TxEdit): Promise<Tx> {
+    return this.json<Tx>(
+      await this.request(`/transactions/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(edit),
+      }),
+    );
+  }
+
+  async warranties(): Promise<Warranty[]> {
+    return this.json<Warranty[]>(await this.request("/warranties"));
+  }
+
+  async createWarranty(input: NewWarranty): Promise<Warranty> {
+    return this.json<Warranty>(
+      await this.request("/warranties", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(input),
+      }),
+    );
+  }
+
+  async attachWarrantyReceipt(id: string, bytes: ArrayBuffer, filename: string, contentType: string): Promise<Warranty> {
+    const form = new FormData();
+    form.append("file", new Blob([bytes], { type: contentType }), filename);
+    return this.json<Warranty>(
+      await this.request(`/warranties/${encodeURIComponent(id)}/receipt`, { method: "POST", body: form }),
+    );
+  }
+
+  async deleteWarranty(id: string): Promise<boolean> {
+    const res = await this.request(`/warranties/${encodeURIComponent(id)}`, { method: "DELETE" });
+    if (res.status === 404) return false;
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+    return true;
+  }
+
+  async downloadReceipt(url: string): Promise<ArrayBuffer> {
+    if (!url.startsWith("/api/receipts/")) throw new ApiError(400, "URL de ticket no valida");
+    const res = await fetch(`${this.baseUrl}${url}`, { signal: AbortSignal.timeout(20_000) });
+    if (!res.ok) throw new ApiError(res.status, `HTTP ${res.status}`);
+    return res.arrayBuffer();
   }
 
   async monthly(months: number): Promise<MonthTotal[]> {

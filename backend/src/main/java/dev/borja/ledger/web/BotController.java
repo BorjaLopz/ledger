@@ -460,4 +460,81 @@ public class BotController {
         }
         return "\"" + v.replace("\"", "\"\"") + "\"";
     }
+
+    // ---- Buscar y editar movimientos ----
+
+    /**
+     * Busca por texto en la nota o el nombre de la categoria (sin tildes ni mayusculas); si el texto es un
+     * numero, tambien por importe exacto. Mas recientes primero; limit 1-20 (10 por defecto).
+     */
+    @GetMapping("/transactions/search")
+    public List<TransactionResponse> search(@AuthenticationPrincipal Jwt jwt, @RequestParam String q,
+                                            @RequestParam(defaultValue = "10") int limit) {
+        String needle = normalize(q);
+        if (needle.isEmpty() || limit < 1 || limit > 20) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "q no puede estar vacio y limit va de 1 a 20");
+        }
+        String uid = jwt.getSubject();
+        Map<String, String> names = new HashMap<>();
+        for (Category c : categories.findByUid(uid)) {
+            names.put(c.id, normalize(c.name));
+        }
+        BigDecimal amount = null;
+        try {
+            amount = new BigDecimal(needle.replace(',', '.'));
+        } catch (NumberFormatException ignored) {
+            // no es un importe
+        }
+        final BigDecimal wanted = amount;
+        return transactions.findByUidOrderByDateDesc(uid).stream()
+                .filter(t -> normalize(t.note).contains(needle)
+                        || names.getOrDefault(t.categoryId, "").contains(needle)
+                        || (wanted != null && t.amount.compareTo(wanted) == 0))
+                .limit(limit)
+                .map(t -> TransactionResponse.from(t, receipts))
+                .toList();
+    }
+
+    /** Edita importe, categoria (del mismo tipo), fecha y/o nota. Solo se tocan los campos enviados. */
+    @PatchMapping("/transactions/{id}")
+    @Transactional
+    public TransactionResponse edit(@AuthenticationPrincipal Jwt jwt, @PathVariable String id,
+                                    @RequestBody JsonNode body) {
+        String uid = jwt.getSubject();
+        Transaction t = transactions.findByIdAndUid(id, uid)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND));
+        if (body == null || !body.isObject()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Se esperaba un objeto JSON");
+        }
+        try {
+            if (body.hasNonNull("amount")) {
+                BigDecimal a = body.get("amount").decimalValue().setScale(2, java.math.RoundingMode.HALF_UP);
+                if (a.signum() <= 0 || a.compareTo(new BigDecimal("999999999999")) > 0) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Importe no valido");
+                }
+                t.amount = a;
+            }
+            if (body.hasNonNull("date")) {
+                t.date = LocalDate.parse(body.get("date").asText());
+            }
+        } catch (DateTimeParseException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Fecha no valida (YYYY-MM-DD)");
+        }
+        if (body.hasNonNull("note")) {
+            String note = body.get("note").asText().trim();
+            if (note.length() > 500) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La nota es demasiado larga");
+            }
+            t.note = note;
+        }
+        if (body.hasNonNull("categoryId")) {
+            Category c = categories.findByIdAndUid(body.get("categoryId").asText(), uid)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "Categoria no valida"));
+            if (!c.type.equals(t.type)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "La categoria no es del mismo tipo");
+            }
+            t.categoryId = c.id;
+        }
+        return TransactionResponse.from(transactions.save(t), receipts);
+    }
 }

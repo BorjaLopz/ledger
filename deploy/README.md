@@ -75,3 +75,11 @@ Seguridad: el bot solo responde a tu ID de Telegram y en chat privado; la API de
 - `/exportar [YYYY-MM|YYYY]`: CSV (`;` y decimales con coma, UTF-8 con BOM) como archivo del chat.
 - Los informes semanal y mensual automáticos adjuntan ahora el donut.
 - Los PNG se dibujan en el propio bot (SVG → `@resvg/resvg-js`); la imagen Docker instala `ttf-dejavu`.
+
+### Garantías y edición de movimientos (v1.4)
+
+- `/nuevagarantia`: producto → fecha de compra (hoy/ayer/otra) → duración (1, 2, 3, 5 años o meses a medida). Después puedes enviar la foto del ticket y se guarda con la garantía.
+- `/garantias`: lista ordenada por caducidad (❌ caducada, ⚠️ ≤30 días, ✅), con detalle, ver ticket, adjuntar ticket y eliminar.
+- Aviso diario a las 10:00 (hora de `TZ`) si alguna garantía caduca en 30, 7 o 1 días, o hoy.
+- `/buscar <texto>`: busca en nota, categoría o importe exacto; desde el resultado se edita importe, categoría, fecha y nota, se ve el ticket o se borra. `/ultimo` también permite editar.
+- Nueva migración Flyway `V2__warranties.sql` (se aplica sola al arrancar `ledger-api`; las copias de seguridad de Postgres ya la incluyen).

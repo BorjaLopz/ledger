@@ -5,6 +5,9 @@ import { ApiError, type Category, type LedgerClient, type Tx } from "./api.js";
 import { dateInZone, formatSummary, money, shortDate } from "./format.js";
 import { COMMANDS } from "./commands.js";
 import { registerCategories } from "./categories.js";
+import { InputState } from "./input.js";
+import { registerMovements } from "./movements.js";
+import { registerWarranties } from "./warranties.js";
 import { monthlyChart, summaryChart } from "./charts.js";
 import { parsePeriod } from "./period.js";
 import { parseEntry, type ParsedEntry } from "./parser.js";
@@ -82,7 +85,15 @@ export function createBot(deps: BotDeps): Bot {
     await next();
   });
 
-  const categories = registerCategories(bot, deps.api);
+  const input = new InputState();
+  // Cualquier comando cancela lo que se estaba esperando que escribieras.
+  bot.on("message::bot_command", async (_ctx, next) => {
+    input.clear();
+    await next();
+  });
+  registerCategories(bot, deps.api, input);
+  registerMovements(bot, { api: deps.api, input, timeZone: deps.timeZone });
+  const warranties = registerWarranties(bot, { api: deps.api, input, timeZone: deps.timeZone, download: deps.download });
 
   bot.command(["start", "ayuda", "help"], (ctx) => ctx.reply(HELP));
 
@@ -145,20 +156,8 @@ export function createBot(deps: BotDeps): Bot {
     });
   });
 
-  bot.command("ultimo", async (ctx) => {
-    const t = await deps.api.lastTransaction();
-    if (!t) {
-      await ctx.reply("Todavía no hay movimientos.");
-      return;
-    }
-    const cats = await deps.api.categories();
-    const name = cats.find((c) => c.id === t.categoryId)?.name;
-    const kb = new InlineKeyboard().text("🗑 Borrar", `u:${t.id}`);
-    await ctx.reply(`${TYPE_LABEL[t.type]}: ${txLine(t, name)}${t.receiptUrl ? " · 📎" : ""}`, { reply_markup: kb });
-  });
-
   bot.on("message:text", async (ctx) => {
-    if (await categories.handleText(ctx)) return;
+    if (await input.handle(ctx)) return;
     const text = ctx.message.text;
     if (text.startsWith("/")) {
       await ctx.reply("No conozco ese comando. /ayuda");
@@ -256,6 +255,7 @@ export function createBot(deps: BotDeps): Bot {
     filename: string,
     mime: string,
   ): Promise<void> => {
+    if (await warranties.offerPhoto(ctx, fileId, filename, mime)) return;
     const last = await deps.api.lastTransaction();
     if (!last) {
       await ctx.reply("No hay ningún movimiento al que asociar el ticket. Mándame primero el gasto.");

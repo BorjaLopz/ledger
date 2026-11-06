@@ -1,6 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { InlineKeyboard, type Bot, type Context } from "grammy";
 import { ApiError, type CategoryUsage, type LedgerClient } from "./api.js";
+import type { InputState } from "./input.js";
 
 /** Iconos validos del frontend (lucide) con un emoji para elegirlos desde Telegram. */
 export const ICONS: { name: string; emoji: string }[] = [
@@ -58,8 +59,6 @@ interface Flow {
   expires: number;
 }
 
-type Awaiting = { kind: "newName"; type: "expense" | "income" } | { kind: "rename"; id: string };
-
 const usageText = (c: CategoryUsage): string => {
   const parts: string[] = [];
   if (c.transactions > 0) parts.push(`${c.transactions} mov.`);
@@ -67,12 +66,8 @@ const usageText = (c: CategoryUsage): string => {
   return parts.length > 0 ? parts.join(", ") : "sin uso";
 };
 
-export function registerCategories(
-  bot: Bot,
-  api: LedgerClient,
-): { handleText: (ctx: Context) => Promise<boolean> } {
+export function registerCategories(bot: Bot, api: LedgerClient, input: InputState): void {
   const flows = new Map<string, Flow>();
-  let awaiting: Awaiting | null = null;
 
   const open = (cats: CategoryUsage[]): string => {
     const now = Date.now();
@@ -135,11 +130,6 @@ export function registerCategories(
   /** Mensaje de error amigable para fallos de la API al crear/renombrar. */
   const conflict = (err: unknown): boolean => err instanceof ApiError && err.status === 409;
 
-  bot.on("message::bot_command", async (ctx, next) => {
-    awaiting = null; // cualquier comando cancela lo que se estaba esperando
-    await next();
-  });
-
   bot.command("categorias", async (ctx) => {
     const v = await listView();
     if (v.text.endsWith(":")) {
@@ -181,7 +171,7 @@ export function registerCategories(
     const c = flow(pid)?.cats[Number(idx)];
     if (!c) return expired(ctx);
     await ctx.answerCallbackQuery();
-    awaiting = { kind: "rename", id: c.id };
+    input.set((c2) => onRename(c2, c.id));
     await ctx.editMessageText(`Escribe el nuevo nombre para «${c.name}» (o /cancelar):`);
   });
 
@@ -189,7 +179,7 @@ export function registerCategories(
   bot.callbackQuery(/^kn:([0-9a-f]+):([ei])$/, async (ctx) => {
     const type = ctx.match[2] === "e" ? "expense" : "income";
     await ctx.answerCallbackQuery();
-    awaiting = { kind: "newName", type };
+    input.set((c2) => onNewName(c2, type));
     await ctx.editMessageText(
       `Nueva categoría de ${type === "expense" ? "gasto" : "ingreso"}. Escribe su nombre (o /cancelar):`,
     );
@@ -295,40 +285,41 @@ export function registerCategories(
     await ctx.editMessageText(`🗑 «${c.name}» eliminada. ${moved} elemento(s) pasados a «${target.name}».`);
   });
 
-  /** Texto libre mientras se espera un nombre. Devuelve true si lo ha consumido. */
-  const handleText = async (ctx: Context): Promise<boolean> => {
-    const wait = awaiting;
+  const onRename = async (ctx: Context, id: string): Promise<void> => {
     const text = ctx.message?.text?.trim();
-    if (!wait || !text) return false;
+    if (!text) return;
     if (text.length > 100) {
       await ctx.reply("Ese nombre es demasiado largo (máx. 100). Prueba con otro:");
-      return true;
+      return;
     }
-    if (wait.kind === "rename") {
-      try {
-        const c = await api.updateCategory(wait.id, { name: text });
-        awaiting = null;
-        await ctx.reply(`✏️ Renombrada a «${c.name}» ✅`);
-      } catch (err) {
-        if (!conflict(err)) throw err;
-        await ctx.reply("Ya tienes una categoría con ese nombre. Prueba con otro (o /cancelar):");
-      }
-      return true;
+    try {
+      const c = await api.updateCategory(id, { name: text });
+      input.clear();
+      await ctx.reply(`✏️ Renombrada a «${c.name}» ✅`);
+    } catch (err) {
+      if (!conflict(err)) throw err;
+      await ctx.reply("Ya tienes una categoría con ese nombre. Prueba con otro (o /cancelar):");
+    }
+  };
+
+  const onNewName = async (ctx: Context, type: "expense" | "income"): Promise<void> => {
+    const text = ctx.message?.text?.trim();
+    if (!text) return;
+    if (text.length > 100) {
+      await ctx.reply("Ese nombre es demasiado largo (máx. 100). Prueba con otro:");
+      return;
     }
     const existing = await api.categories();
     const norm = (s: string): string => s.normalize("NFD").replace(/\p{M}/gu, "").toLowerCase();
-    if (existing.some((c) => c.type === wait.type && norm(c.name) === norm(text))) {
+    if (existing.some((c) => c.type === type && norm(c.name) === norm(text))) {
       await ctx.reply("Ya tienes una categoría con ese nombre. Prueba con otro (o /cancelar):");
-      return true;
+      return;
     }
-    awaiting = null;
+    input.clear();
     const pid = open([]);
     const f = flows.get(pid)!;
-    f.newType = wait.type;
+    f.newType = type;
     f.newName = text;
     await ctx.reply(`Elige un icono para «${text}»:`, { reply_markup: iconGrid(pid) });
-    return true;
   };
-
-  return { handleText };
 }

@@ -3,7 +3,7 @@ import { InputFile } from "grammy";
 import { LedgerApi } from "./api.js";
 import { summaryChart } from "./charts.js";
 import { COMMANDS } from "./commands.js";
-import { startReports } from "./scheduler.js";
+import { startReports, startWarrantyNotices } from "./scheduler.js";
 
 function required(name: string): string {
   const value = process.env[name]?.trim();
@@ -54,8 +54,18 @@ const stopReports = startReports({
   },
 });
 
+// Aviso diario (10:00) de garantias que caducan en 30, 7 o 1 dias, o hoy.
+const stopWarranties = startWarrantyNotices({
+  api,
+  timeZone,
+  send: async (text) => {
+    await bot.api.sendMessage(allowedId, text);
+  },
+});
+
 const stop = () => {
   stopReports();
+  stopWarranties();
   void bot.stop().finally(() => process.exit(0));
 };
 process.once("SIGINT", stop);

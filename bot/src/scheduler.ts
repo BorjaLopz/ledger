@@ -1,4 +1,5 @@
-import type { LedgerClient, Summary, SummaryRange } from "./api.js";
+import type { LedgerClient, Summary, SummaryRange, Warranty } from "./api.js";
+import { longDate } from "./dates.js";
 import { dateInZone, formatSummary } from "./format.js";
 
 export interface DueReport {
@@ -95,6 +96,49 @@ export function startReports(opts: ReportOptions): () => void {
         sent.delete(report.key); // reintenta en el siguiente minuto mientras dure la ventana
         console.error(`No se pudo enviar el informe ${report.key}:`, err instanceof Error ? err.message : err);
       }
+    }
+  };
+
+  const timer = setInterval(() => void tick(), opts.intervalMs ?? 60_000);
+  timer.unref();
+  return () => clearInterval(timer);
+}
+
+/** Dias de antelacion con los que se avisa de una garantia que caduca. */
+export const WARRANTY_NOTICE_DAYS = [30, 7, 1, 0];
+
+/** Texto del aviso diario, o null si hoy no caduca nada "de aviso". */
+export function warrantyNotice(list: Warranty[]): string | null {
+  const due = list.filter((w) => WARRANTY_NOTICE_DAYS.includes(w.daysLeft));
+  if (due.length === 0) return null;
+  const when = (d: number): string => (d === 0 ? "caduca HOY" : d === 1 ? "caduca mañana" : `caduca en ${d} días`);
+  const lines = due.map((w) => `• ${w.name}: ${when(w.daysLeft)} (${longDate(w.expiresOn)})`);
+  return `🛡 Garantías a punto de caducar:\n${lines.join("\n")}\n\nRevisa /garantias por si te interesa reclamar o ampliar algo.`;
+}
+
+export interface WarrantyNoticeOptions {
+  api: LedgerClient;
+  send: (text: string) => Promise<void>;
+  timeZone: string;
+  intervalMs?: number;
+  now?: () => number;
+}
+
+/** Cada minuto comprueba si son las 10:xx (hora local) y, una vez al dia, avisa de garantias a punto de caducar. */
+export function startWarrantyNotices(opts: WarrantyNoticeOptions): () => void {
+  const done = new Set<string>();
+  const now = opts.now ?? Date.now;
+
+  const tick = async (): Promise<void> => {
+    const p = localParts(now(), opts.timeZone);
+    if (p.hour !== 10 || done.has(p.date)) return;
+    done.add(p.date);
+    try {
+      const text = warrantyNotice(await opts.api.warranties());
+      if (text) await opts.send(text);
+    } catch (err) {
+      done.delete(p.date); // reintenta en el siguiente minuto mientras dure la ventana
+      console.error("No se pudo enviar el aviso de garantias:", err instanceof Error ? err.message : err);
     }
   };
 
